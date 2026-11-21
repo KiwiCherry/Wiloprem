@@ -1,209 +1,9 @@
 use super::*;
 
-// ---------------------------------------------------------------------------
-// Semantic Design System Tokens (UI/UX Pro Max — Minimalism & Swiss Style)
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy)]
-pub(super) struct ThemePalette {
-    pub(super) is_dark: bool,
-    pub(super) bg_app: Color32,
-    pub(super) bg_sidebar: Color32,
-    pub(super) bg_chat_canvas: Color32,
-    pub(super) bg_elevated: Color32,
-    pub(super) bg_hover: Color32,
-    pub(super) bg_selected: Color32,
-    pub(super) bg_input: Color32,
-    pub(super) bg_input_track: Color32,
-    pub(super) border: Color32,
-    pub(super) text_primary: Color32,
-    pub(super) text_secondary: Color32,
-    pub(super) text_muted: Color32,
-    pub(super) primary: Color32,
-    pub(super) primary_hover: Color32,
-    pub(super) accent_online: Color32,
-    pub(super) danger: Color32,
-    pub(super) danger_text: Color32,
-    pub(super) warning: Color32,
-    pub(super) reaction_star: Color32,
-    pub(super) code_bg: Color32,
-    pub(super) link_text: Color32,
-    pub(super) primary_fg: Color32,
-    pub(super) bubble_out_bg: Color32,
-    pub(super) bubble_out_text: Color32,
-    pub(super) bubble_out_meta: Color32,
-    pub(super) bubble_in_bg: Color32,
-    pub(super) bubble_in_border: Color32,
-    pub(super) bubble_in_text: Color32,
-    pub(super) bubble_in_meta: Color32,
-}
-
-pub(crate) fn relative_luminance(c: Color32) -> f32 {
-    let srgb_to_linear = |v: u8| -> f32 {
-        let vf = v as f32 / 255.0;
-        if vf <= 0.04045 {
-            vf / 12.92
-        } else {
-            ((vf + 0.055) / 1.055).powf(2.4)
-        }
-    };
-    0.2126 * srgb_to_linear(c.r()) + 0.7152 * srgb_to_linear(c.g()) + 0.0722 * srgb_to_linear(c.b())
-}
-
-pub(crate) fn contrast_ratio(c1: Color32, c2: Color32) -> f32 {
-    let l1 = relative_luminance(c1);
-    let l2 = relative_luminance(c2);
-    (l1.max(l2) + 0.05) / (l1.min(l2) + 0.05)
-}
+pub(super) use super::design_system::palette::{contrast_ratio, ThemePalette};
+pub use super::design_system::icons::lucide;
 
 impl ThemePalette {
-    pub(super) fn dark() -> Self {
-        // Atom One Dark + WCAG 2.1 AA compliant contrast tokens (>= 4.5:1)
-        Self {
-            is_dark: true,
-            bg_app: Color32::from_rgb(34, 38, 43),          // #22262B
-            bg_sidebar: Color32::from_rgb(34, 38, 43),      // #22262B
-            bg_chat_canvas: Color32::from_rgb(29, 32, 37),  // #1D2025
-            bg_elevated: Color32::from_rgb(40, 45, 51),     // #282D33
-            bg_hover: Color32::from_rgb(46, 51, 58),        // #2E333A
-            bg_selected: Color32::from_rgb(31, 52, 77),     // #1F344D
-            bg_input: Color32::from_rgb(26, 29, 34),        // #1A1D22 (darker than bg_elevated)
-            bg_input_track: Color32::from_rgb(31, 35, 41),  // #1F2329 segmented track
-            border: Color32::from_rgb(55, 61, 69),          // #373D45
-            text_primary: Color32::from_rgb(230, 233, 238), // #E6E9EE
-            text_secondary: Color32::from_rgb(170, 178, 190), // #AAB2BE
-            text_muted: Color32::from_rgb(142, 150, 164),   // #8E96A4 (4.66-5.48:1)
-            primary: Color32::from_rgb(37, 99, 235),        // #2563EB (5.17:1 with white)
-            primary_hover: Color32::from_rgb(96, 165, 250), // #60A5FA (4.99-5.51:1 on dark)
-            accent_online: Color32::from_rgb(74, 222, 128), // #4ADE80 (7.96-9.37:1 on dark)
-            danger: Color32::from_rgb(220, 38, 38),         // #DC2626 (4.83:1 with white)
-            danger_text: Color32::from_rgb(248, 113, 113),  // #F87171 (5.02-5.91:1 on dark)
-            warning: Color32::from_rgb(251, 191, 36),       // #FBBF24 (8.31-9.79:1 on dark)
-            reaction_star: Color32::from_rgb(251, 191, 36), // #FBBF24
-            code_bg: Color32::from_rgb(22, 25, 29),         // #16191D
-            link_text: Color32::from_rgb(96, 165, 250),     // #60A5FA
-            primary_fg: Color32::WHITE,
-            bubble_out_bg: Color32::from_rgb(31, 52, 77),     // #1F344D
-            bubble_out_text: Color32::from_rgb(235, 240, 246), // #EBF0F6
-            bubble_out_meta: Color32::from_rgb(157, 178, 204), // #9DB2CC (5.84:1)
-            bubble_in_bg: Color32::from_rgb(40, 45, 51),      // #282D33
-            bubble_in_border: Color32::from_rgb(55, 61, 69),  // #373D45
-            bubble_in_text: Color32::from_rgb(230, 233, 238), // #E6E9EE
-            bubble_in_meta: Color32::from_rgb(150, 159, 174), // #969FAE (5.20:1)
-        }
-    }
-
-    pub(super) fn light() -> Self {
-        // Zalo PC Light + layered surface depth + WCAG 2.1 AA contrast (>= 4.5:1)
-        Self {
-            is_dark: false,
-            bg_app: Color32::from_rgb(248, 250, 252),         // #F8FAFC
-            bg_sidebar: Color32::from_rgb(248, 250, 252),     // #F8FAFC
-            bg_chat_canvas: Color32::from_rgb(235, 240, 247), // #EBF0F7
-            bg_elevated: Color32::WHITE,                      // #FFFFFF
-            bg_hover: Color32::from_rgb(237, 242, 247),       // #EDF2F7
-            bg_selected: Color32::from_rgb(229, 241, 255),    // #E5F1FF
-            bg_input: Color32::WHITE,                         // #FFFFFF
-            bg_input_track: Color32::from_rgb(230, 236, 245), // #E6ECF5 segmented track
-            border: Color32::from_rgb(203, 213, 225),         // #CBD5E1
-            text_primary: Color32::from_rgb(15, 23, 42),      // #0F172A
-            text_secondary: Color32::from_rgb(71, 85, 105),   // #475569
-            text_muted: Color32::from_rgb(92, 100, 112),      // #5C6470 (5.22-5.98:1)
-            primary: Color32::from_rgb(0, 104, 255),          // #0068FF (4.75:1 with white)
-            primary_hover: Color32::from_rgb(0, 85, 212),     // #0055D4 (5.65:1 on #E5F1FF)
-            accent_online: Color32::from_rgb(4, 120, 87),     // #047857 (4.79-5.48:1)
-            danger: Color32::from_rgb(195, 24, 24),           // #C31818 (5.30-6.06:1)
-            danger_text: Color32::from_rgb(195, 24, 24),      // #C31818
-            warning: Color32::from_rgb(154, 91, 0),           // #9A5B00 (4.74-5.43:1)
-            reaction_star: Color32::from_rgb(154, 91, 0),     // #9A5B00
-            code_bg: Color32::from_rgb(241, 245, 249),        // #F1F5F9
-            link_text: Color32::from_rgb(0, 85, 212),         // #0055D4
-            primary_fg: Color32::WHITE,
-            bubble_out_bg: Color32::from_rgb(229, 239, 255),  // #E5EFFF
-            bubble_out_text: Color32::from_rgb(15, 23, 42),   // #0F172A
-            bubble_out_meta: Color32::from_rgb(67, 88, 117),  // #435875 (6.27:1)
-            bubble_in_bg: Color32::WHITE,                     // #FFFFFF
-            bubble_in_border: Color32::from_rgb(216, 224, 236), // #D8E0EC
-            bubble_in_text: Color32::from_rgb(15, 23, 42),    // #0F172A
-            bubble_in_meta: Color32::from_rgb(92, 100, 112),  // #5C6470 (5.98:1)
-        }
-    }
-
-    pub(super) fn apply_to_ctx_with_anim(
-        &self,
-        ctx: &egui::Context,
-        animations_enabled: bool,
-        animation_speed: f32,
-    ) {
-        let target_theme = if self.is_dark {
-            egui::Theme::Dark
-        } else {
-            egui::Theme::Light
-        };
-        let mut style = (*ctx.style_of(target_theme)).clone();
-        let mut visuals = if self.is_dark {
-            egui::Visuals::dark()
-        } else {
-            egui::Visuals::light()
-        };
-        visuals.dark_mode = self.is_dark;
-
-        visuals.panel_fill = self.bg_app;
-        visuals.window_fill = self.bg_elevated;
-        visuals.extreme_bg_color = self.bg_input;
-        visuals.faint_bg_color = self.bg_hover;
-        visuals.override_text_color = Some(self.text_primary);
-        visuals.widgets.noninteractive.weak_bg_fill = self.bg_app;
-        visuals.selection.bg_fill =
-            self.primary
-                .linear_multiply(if self.is_dark { 0.45 } else { 0.22 });
-        visuals.selection.stroke = Stroke::new(1.5_f32, self.primary);
-
-        let r = Rounding::same(8.0);
-        visuals.widgets.noninteractive.bg_fill = self.bg_app;
-        visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, self.border);
-        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, self.text_primary);
-        visuals.widgets.noninteractive.rounding = r;
-
-        visuals.widgets.inactive.bg_fill = self.bg_elevated;
-        visuals.widgets.inactive.weak_bg_fill = self.bg_elevated;
-        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, self.border);
-        visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, self.text_primary);
-        visuals.widgets.inactive.rounding = r;
-
-        visuals.widgets.hovered.bg_fill = self.bg_hover;
-        visuals.widgets.hovered.weak_bg_fill = self.bg_hover;
-        visuals.widgets.hovered.bg_stroke = Stroke::new(1.2_f32, self.primary);
-        visuals.widgets.hovered.fg_stroke = Stroke::new(1.2_f32, self.text_primary);
-        visuals.widgets.hovered.rounding = r;
-
-        visuals.widgets.active.bg_fill = self.primary;
-        visuals.widgets.active.weak_bg_fill = self.primary;
-        visuals.widgets.active.bg_stroke = Stroke::new(1.5_f32, self.primary);
-        visuals.widgets.active.fg_stroke = Stroke::new(1.5_f32, self.primary_fg);
-        visuals.widgets.active.rounding = r;
-
-        style.spacing.item_spacing = Vec2::new(8.0, 6.0);
-        style.spacing.button_padding = Vec2::new(10.0, 6.0);
-        style.spacing.scroll = egui::style::ScrollStyle::solid();
-        style.spacing.scroll.bar_width = 6.0;
-        style.animation_time = if animations_enabled {
-            (0.12 / animation_speed.clamp(0.5, 2.0)).clamp(0.03, 0.35)
-        } else {
-            0.0
-        };
-        style.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(13.5));
-        style.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(13.0));
-        style.text_styles.insert(egui::TextStyle::Small, egui::FontId::proportional(11.5));
-        style.visuals = visuals;
-
-        // Bind active egui::Theme, style slot, and current style so OS theme/persistence
-        // never reverts widgets (Buttons, TextEdits) back to default Light visuals.
-        ctx.set_theme(target_theme);
-        ctx.set_style_of(target_theme, style.clone());
-        ctx.set_style(style);
-    }
-
     /// Load either the built-in dark/light palette or apply custom overrides from `theme.json` (#7).
     pub(super) fn load_with_custom_override(dark_mode: bool) -> Self {
         let mut base = if dark_mode {
@@ -234,6 +34,9 @@ impl ThemePalette {
             ("bg_elevated", &mut self.bg_elevated),
             ("bg_hover", &mut self.bg_hover),
             ("bg_selected", &mut self.bg_selected),
+            ("bg_message_hover", &mut self.bg_message_hover),
+            ("bg_floating", &mut self.bg_floating),
+            ("scrim", &mut self.scrim),
             ("bg_input", &mut self.bg_input),
             ("bg_input_track", &mut self.bg_input_track),
             ("border", &mut self.border),
@@ -277,6 +80,9 @@ impl ThemePalette {
                 "bg_elevated": format_hex_color(p.bg_elevated),
                 "bg_hover": format_hex_color(p.bg_hover),
                 "bg_selected": format_hex_color(p.bg_selected),
+                "bg_message_hover": format_hex_color(p.bg_message_hover),
+                "bg_floating": format_hex_color(p.bg_floating),
+                "scrim": format_hex_color(p.scrim),
                 "bg_input": format_hex_color(p.bg_input),
                 "bg_input_track": format_hex_color(p.bg_input_track),
                 "border": format_hex_color(p.border),
@@ -449,14 +255,7 @@ pub(super) fn animate_bool_scaled(
 
 /// Shared styled `egui::Frame` wrapper for standard text inputs (`Radius-Ladder` 8px).
 pub(super) fn styled_input_frame(pal: &ThemePalette, focused: bool) -> egui::Frame {
-    egui::Frame::none()
-        .fill(pal.bg_input)
-        .stroke(Stroke::new(
-            if focused { 1.4_f32 } else { 1.0_f32 },
-            if focused { pal.primary } else { pal.border },
-        ))
-        .rounding(Rounding::same(8.0))
-        .inner_margin(Margin::symmetric(10.0, 6.0))
+    super::design_system::widgets::input_frame(pal, focused)
 }
 
 /// Font family identifier for SemiBold headings/labels (backed by `BeVietnamPro-SemiBold.ttf`).
@@ -869,65 +668,6 @@ pub(super) fn paint_user_avatar(
     }
 }
 
-pub mod lucide {
-    pub const SEARCH: &str = "\u{e151}";
-    pub const REFRESH: &str = "\u{e145}";
-    pub const SMILE: &str = "\u{e164}";
-    pub const SEND: &str = "\u{e4f2}";
-    pub const SUN: &str = "\u{e178}";
-    pub const MOON: &str = "\u{e11e}";
-    pub const PHONE: &str = "\u{e133}";
-    pub const PHONE_CALL: &str = "\u{e134}";
-    pub const PHONE_OFF: &str = "\u{e138}";
-    pub const VIDEO: &str = "\u{e1a5}";
-    pub const VIDEO_OFF: &str = "\u{e1a6}";
-    pub const CAMERA: &str = "\u{e064}";
-    pub const IMAGE: &str = "\u{e0f6}";
-    pub const PAPERCLIP: &str = "\u{e12d}";
-    pub const CHECK: &str = "\u{e06c}";
-    pub const CHECK_CHECK: &str = "\u{e38e}";
-    pub const MESSAGE_SQUARE: &str = "\u{e117}";
-    pub const USERS: &str = "\u{e1a4}";
-    pub const USER_PLUS: &str = "\u{e1a2}";
-    pub const CLOUD: &str = "\u{e088}";
-    pub const SETTINGS: &str = "\u{e154}";
-    pub const PANEL_RIGHT: &str = "\u{e431}";
-    pub const PIN: &str = "\u{e259}";
-    pub const COPY: &str = "\u{e09e}";
-    pub const STAR: &str = "\u{e176}";
-    pub const GLOBE: &str = "\u{e0e8}";
-    pub const LINK: &str = "\u{e102}";
-    pub const EXTERNAL_LINK: &str = "\u{e0b9}";
-    pub const X: &str = "\u{e1b2}";
-    pub const PLUS: &str = "\u{e13d}";
-    pub const MINUS: &str = "\u{e11c}";
-    pub const STORE: &str = "\u{e3e4}";
-    pub const FLAME: &str = "\u{e0d2}";
-    pub const SPARKLES: &str = "\u{e412}";
-    pub const BAN: &str = "\u{e051}";
-    pub const MIC: &str = "\u{e118}";
-    pub const MIC_OFF: &str = "\u{e119}";
-    pub const CLOCK: &str = "\u{e087}";
-    pub const LOG_OUT: &str = "\u{e10e}";
-    pub const FILE_TEXT: &str = "\u{e0cc}";
-    pub const FILM: &str = "\u{e0d0}";
-    pub const SHIELD_CHECK: &str = "\u{e15c}";
-    pub const LOCK: &str = "\u{e10b}";
-    pub const BELL: &str = "\u{e059}";
-    pub const PAINTBRUSH: &str = "\u{e2e7}";
-    pub const SLIDERS: &str = "\u{e29a}";
-    pub const FOLDER_OPEN: &str = "\u{e247}";
-    pub const CHEVRON_RIGHT: &str = "\u{e06f}";
-    pub const CHEVRON_DOWN: &str = "\u{e06d}";
-    pub const USER: &str = "\u{e19f}";
-    pub const NEWSPAPER: &str = "\u{e124}";
-    pub const QUOTE: &str = "\u{e239}";
-    pub const FORWARD: &str = "\u{e229}";
-    pub const SHARE_2: &str = "\u{e156}";
-    pub const TRASH_2: &str = "\u{e18e}";
-    pub const INFO: &str = "\u{e0f9}";
-}
-
 pub(super) fn draw_lucide_icon(
     painter: &egui::Painter,
     center: Pos2,
@@ -935,13 +675,7 @@ pub(super) fn draw_lucide_icon(
     size: f32,
     color: Color32,
 ) {
-    painter.text(
-        center,
-        egui::Align2::CENTER_CENTER,
-        icon,
-        FontId::proportional(size),
-        color,
-    );
+    super::design_system::widgets::paint_icon(painter, center, icon, size, color);
 }
 
 pub(super) fn draw_icon_search(painter: &egui::Painter, center: Pos2, size: f32, color: Color32) {
@@ -972,45 +706,8 @@ pub(super) fn draw_icon_image(painter: &egui::Painter, center: Pos2, size: f32, 
     draw_lucide_icon(painter, center, lucide::IMAGE, size, color);
 }
 
-pub(super) fn draw_icon_camera(painter: &egui::Painter, center: Pos2, size: f32, color: Color32) {
-    draw_lucide_icon(painter, center, lucide::CAMERA, size, color);
-}
-
-pub(super) fn draw_icon_mic(painter: &egui::Painter, center: Pos2, size: f32, color: Color32) {
-    draw_lucide_icon(painter, center, lucide::MIC, size, color);
-}
-
-pub(super) fn draw_icon_attachment(
-    painter: &egui::Painter,
-    center: Pos2,
-    size: f32,
-    color: Color32,
-) {
-    draw_lucide_icon(painter, center, lucide::PAPERCLIP, size, color);
-}
-
-pub(super) fn draw_icon_chat_nav(painter: &egui::Painter, center: Pos2, size: f32, color: Color32) {
-    draw_lucide_icon(painter, center, lucide::MESSAGE_SQUARE, size, color);
-}
-
 pub(super) fn draw_icon_contacts(painter: &egui::Painter, center: Pos2, size: f32, color: Color32) {
     draw_lucide_icon(painter, center, lucide::USERS, size, color);
-}
-
-pub(super) fn draw_icon_cloud(painter: &egui::Painter, center: Pos2, size: f32, color: Color32) {
-    draw_lucide_icon(painter, center, lucide::CLOUD, size, color);
-}
-
-pub(super) fn draw_icon_settings(painter: &egui::Painter, center: Pos2, size: f32, color: Color32) {
-    draw_lucide_icon(painter, center, lucide::SETTINGS, size, color);
-}
-pub(super) fn draw_icon_feed(painter: &egui::Painter, center: Pos2, size: f32, color: Color32) {
-    draw_lucide_icon(painter, center, lucide::NEWSPAPER, size, color);
-}
-
-pub(super) fn draw_icon_drawer(painter: &egui::Painter, center: Pos2, size: f32, color: Color32) {
-    // Icon ⓘ to rõ thay vì PANEL_RIGHT mờ khó thấy.
-    draw_lucide_icon(painter, center, lucide::INFO, size * 1.15, color);
 }
 
 pub(super) fn draw_icon_pin(painter: &egui::Painter, center: Pos2, size: f32, color: Color32) {
@@ -1066,6 +763,7 @@ pub(super) fn draw_icon_play(
 }
 
 /// Draw a crisp vector pause icon (two vertical bars).
+#[allow(dead_code)]
 pub(super) fn draw_icon_pause(
     painter: &egui::Painter,
     center: Pos2,
@@ -1346,40 +1044,13 @@ pub(super) fn load_default_emoji_textures(ctx: &egui::Context) -> HashMap<String
     map
 }
 
-/// Render an iOS/Zalo PC style rounded Toggle Switch in pure egui.
+/// Pill toggle switch; thin wrapper over the design-system widget.
 pub(super) fn render_toggle_switch(
     ui: &mut egui::Ui,
     value: &mut bool,
     pal: &ThemePalette,
 ) -> egui::Response {
-    let (rect, mut resp) = ui.allocate_exact_size(Vec2::new(38.0, 20.0), Sense::click());
-    if resp.clicked() {
-        *value = !*value;
-        resp.mark_changed();
-    }
-    resp = resp.on_hover_cursor(CursorIcon::PointingHand);
-
-    let bg = if *value {
-        pal.primary
-    } else if pal.is_dark {
-        Color32::from_rgb(58, 63, 75)
-    } else {
-        Color32::from_rgb(203, 213, 225)
-    };
-    ui.painter().rect_filled(rect, Rounding::same(10.0), bg);
-
-    let knob_radius = 7.5_f32;
-    let knob_x = if *value {
-        rect.right() - 10.0
-    } else {
-        rect.left() + 10.0
-    };
-    ui.painter().circle_filled(
-        Pos2::new(knob_x, rect.center().y),
-        knob_radius,
-        Color32::WHITE,
-    );
-    resp
+    super::design_system::widgets::toggle_switch(ui, pal, value)
 }
 
 static CJK_LOADED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);

@@ -3710,7 +3710,10 @@ pub(super) fn render_chat_bubble(
     md: MdOptions,
 ) -> Option<BubbleAction> {
     let avail_w = (ui.available_width() - 8.0).max(140.0);
-    let max_bubble_width = (avail_w * 0.72).clamp(140.0, 520.0).min(avail_w);
+    let max_bubble_width = (avail_w
+        * crate::gui::design_system::tokens::layout::MESSAGE_MAX_FRACTION)
+        .clamp(140.0, 520.0)
+        .min(avail_w);
     let max_text_width = (max_bubble_width - 24.0).max(90.0);
     // Tin đã biến mất: vô hiệu mọi media/link card — chỉ render text hệ thống.
     let vanished = msg.text.trim() == crate::chat::VANISH_EXPIRED_TEXT;
@@ -3996,15 +3999,7 @@ pub(super) fn render_chat_bubble(
                 let fill = if has_sticker || is_frameless_photo {
                     Color32::TRANSPARENT
                 } else if let Some(card) = &call_card_opt {
-                    if card.is_missed_or_failed {
-                        if pal.is_dark {
-                            Color32::from_rgb(38, 23, 30)
-                        } else {
-                            Color32::from_rgb(254, 242, 242)
-                        }
-                    } else {
-                        pal.bg_elevated
-                    }
+                    pal.call_card_bg(card.is_missed_or_failed)
                 } else {
                     pal.bubble_out_bg
                 };
@@ -4014,18 +4009,18 @@ pub(super) fn render_chat_bubble(
                 } else if is_anti_recalled {
                     Stroke::new(1.2_f32, pal.warning)
                 } else if let Some(card) = &call_card_opt {
-                    let border_col = if card.is_missed_or_failed {
-                        Color32::from_rgb(239, 68, 68).linear_multiply(0.55)
-                    } else {
-                        Color32::from_rgb(34, 197, 94).linear_multiply(0.55)
-                    };
-                    Stroke::new(1.2_f32, border_col)
+                    Stroke::new(1.2_f32, pal.call_card_border(card.is_missed_or_failed))
                 } else if !pal.is_dark {
-                    Stroke::new(1.0_f32, Color32::from_rgb(199, 224, 255))
+                    Stroke::new(1.0_f32, pal.border)
                 } else {
                     Stroke::NONE
                 };
-                let rounding = Rounding::same(12.0);
+                let rounding = Rounding {
+                    nw: 12.0,
+                    sw: 12.0,
+                    ne: if prev_same_sender { 4.0 } else { 12.0 },
+                    se: if next_same_sender { 4.0 } else { 12.0 },
+                };
 
                 let mut card_action = None;
                 let mut quote_action = None;
@@ -4130,7 +4125,21 @@ pub(super) fn render_chat_bubble(
                 if fr.response.double_clicked() {
                     return Some(BubbleAction::Reply);
                 }
-                reaction_action
+                let hover_action = if !vanished && album.len() < 2 {
+                    render_hover_reaction_bar(
+                        ui,
+                        fr.response.rect,
+                        msg,
+                        idx,
+                        true,
+                        pal,
+                        emoji_textures,
+                    )
+                } else {
+                    None
+                };
+                hover_action
+                    .or(reaction_action)
                     .or(quote_action)
                     .or(card_action)
                     // Album tiles open their own menus; a row-wide one would target photo 1.
@@ -4181,15 +4190,7 @@ pub(super) fn render_chat_bubble(
             let fill = if has_sticker || is_frameless_photo {
                 Color32::TRANSPARENT
             } else if let Some(card) = &call_card_opt {
-                if card.is_missed_or_failed {
-                    if pal.is_dark {
-                        Color32::from_rgb(38, 23, 30)
-                    } else {
-                        Color32::from_rgb(254, 242, 242)
-                    }
-                } else {
-                    pal.bg_elevated
-                }
+                pal.call_card_bg(card.is_missed_or_failed)
             } else {
                 pal.bubble_in_bg
             };
@@ -4198,16 +4199,16 @@ pub(super) fn render_chat_bubble(
             } else if msg.text.trim().starts_with("[Đã thu hồi]") {
                 Stroke::new(1.2_f32, pal.warning)
             } else if let Some(card) = &call_card_opt {
-                let border_col = if card.is_missed_or_failed {
-                    Color32::from_rgb(239, 68, 68).linear_multiply(0.55)
-                } else {
-                    Color32::from_rgb(34, 197, 94).linear_multiply(0.55)
-                };
-                Stroke::new(1.2_f32, border_col)
+                Stroke::new(1.2_f32, pal.call_card_border(card.is_missed_or_failed))
             } else {
                 Stroke::new(1.0_f32, pal.bubble_in_border)
             };
-            let rounding = Rounding::same(12.0);
+            let rounding = Rounding {
+                ne: 12.0,
+                se: 12.0,
+                nw: if prev_same_sender { 4.0 } else { 12.0 },
+                sw: if next_same_sender { 4.0 } else { 12.0 },
+            };
 
             ui.vertical(|ui| {
                 ui.set_max_width(total_bubble_w);
@@ -4293,7 +4294,21 @@ pub(super) fn render_chat_bubble(
                 if fr.response.double_clicked() {
                     return Some(BubbleAction::Reply);
                 }
-                reaction_action
+                let hover_action = if !vanished && album.len() < 2 {
+                    render_hover_reaction_bar(
+                        ui,
+                        fr.response.rect,
+                        msg,
+                        idx,
+                        false,
+                        pal,
+                        emoji_textures,
+                    )
+                } else {
+                    None
+                };
+                hover_action
+                    .or(reaction_action)
                     .or(quote_action)
                     .or(card_action)
                     // Album tiles open their own menus; a row-wide one would target photo 1.
@@ -4825,7 +4840,7 @@ pub(super) fn render_quote_block(
     } else {
         (pal.bubble_in_text, pal.bubble_in_meta)
     };
-    let bar_col = Color32::from_rgb(102, 166, 255); // #66A6FF
+    let bar_col = pal.primary_hover;
     let bg_col = if outgoing && pal.is_dark {
         Color32::from_rgba_unmultiplied(0, 0, 0, 42)
     } else if outgoing {
@@ -4833,7 +4848,7 @@ pub(super) fn render_quote_block(
     } else if pal.is_dark {
         Color32::from_rgba_unmultiplied(0, 0, 0, 42)
     } else {
-        Color32::from_rgb(229, 241, 255)
+        pal.bg_selected
     };
     let inner_col_w = (max_w - 28.0).max(72.0);
     let frame = egui::Frame::none()
@@ -4878,7 +4893,6 @@ pub(super) fn render_quote_block(
     clicked.then(|| BubbleAction::JumpToQuoted(reference.unwrap_or_default()))
 }
 
-#[allow(dead_code)]
 pub(super) fn render_hover_reaction_bar(
     ui: &mut egui::Ui,
     bubble_rect: Rect,
@@ -4985,11 +4999,7 @@ pub(super) fn render_hover_reaction_bar(
         .fixed_pos(Pos2::new(x, y))
         .show(ui.ctx(), |ui| {
             egui::Frame::none()
-                .fill(if pal.is_dark {
-                    Color32::from_rgb(33, 37, 43)
-                } else {
-                    Color32::WHITE
-                })
+                .fill(pal.bg_elevated)
                 .stroke(Stroke::new(1.0_f32, pal.border))
                 .rounding(Rounding::same(16.0))
                 .shadow(egui::epaint::Shadow {

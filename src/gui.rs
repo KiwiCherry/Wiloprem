@@ -21,6 +21,10 @@ use crate::logger::{self, FindingLevel, LogEntry, ScanFinding};
 use crate::qr::QrLogin;
 use crate::session::Session;
 
+#[path = "../design-system/ui/mod.rs"]
+pub(crate) mod design_system;
+
+mod actions;
 mod attachments;
 pub(crate) mod messages;
 mod modals;
@@ -30,6 +34,7 @@ mod theme;
 mod worker;
 mod workspace;
 
+use actions::*;
 use messages::*;
 use stickers::*;
 use theme::*;
@@ -2231,6 +2236,7 @@ impl ZaloGuiApp {
     }
 
     /// Bật/tắt lưu tin + đồng bộ star 2 chiều (WaveA2).
+    #[allow(dead_code)]
     pub(super) fn toggle_saved_for(&mut self, thread_id: &str, msg_id: &str, starred: bool) {
         let db = crate::store::db_path_for_account(&self.user_uin);
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
@@ -5234,7 +5240,7 @@ impl ZaloGuiApp {
                             ui.painter().rect_filled(
                                 close_rect,
                                 Rounding::ZERO,
-                                Color32::from_rgb(232, 17, 35),
+                                pal.danger,
                             );
                         }
                         let close_fg = if close_resp.hovered() {

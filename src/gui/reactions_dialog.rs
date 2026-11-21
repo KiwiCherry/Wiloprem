@@ -113,18 +113,16 @@ impl ZaloGuiApp {
         }
 
         let screen = ctx.screen_rect();
-        let dlg_w = (screen.width() - 24.0).clamp(240.0, 340.0);
-        let dlg_h = (screen.height() - 32.0).clamp(240.0, 380.0);
-        let mut open = true;
+        let dlg_w = (screen.width() - 24.0).clamp(240.0, 360.0);
         let mut close_dialog = false;
         let mut next_tab = tab;
-        egui::Window::new("Cảm xúc")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(dlg_w, dlg_h))
-            .show(ctx, |ui| {
+        let dismissed = crate::gui::design_system::widgets::show_modal(
+            ctx,
+            pal,
+            "reactions_dialog_modal",
+            "Cảm xúc",
+            dlg_w,
+            |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
                     if ui
@@ -182,7 +180,7 @@ impl ZaloGuiApp {
                 });
                 ui.separator();
                 egui::ScrollArea::vertical()
-                    .max_height(320.0)
+                    .max_height(280.0)
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         if rows.is_empty() {
@@ -259,9 +257,11 @@ impl ZaloGuiApp {
                             ui.add_space(4.0);
                         }
                     });
-            });
+            },
+        )
+        .is_some();
         self.reactions_tab = next_tab;
-        if !open || close_dialog {
+        if dismissed || close_dialog {
             self.reactions_dialog = None;
         }
     }

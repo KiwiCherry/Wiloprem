@@ -1500,11 +1500,7 @@ impl ZaloGuiApp {
                     ui.painter().rect_filled(
                         bg_rect,
                         Rounding::ZERO,
-                        if pal.is_dark {
-                            Color32::from_rgba_unmultiplied(6, 9, 16, 224)
-                        } else {
-                            Color32::from_rgba_unmultiplied(15, 23, 42, 185)
-                        },
+                        pal.scrim,
                     );
                 }
                 if bg_resp.clicked() {
@@ -7713,85 +7709,73 @@ impl ZaloGuiApp {
             return;
         }
         let screen = ctx.screen_rect();
-        let mut open = true;
+        let width = (screen.width() - 24.0).clamp(260.0, 380.0);
         let mut confirm = false;
         let mut cancel = false;
-        egui::Window::new("Xoá dữ liệu tin nhắn cục bộ")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(
-                (screen.width() - 24.0).clamp(260.0, 380.0),
-                (screen.height() - 32.0).clamp(150.0, 210.0),
-            ))
-            .show(ctx, |ui| {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(
-                                    "Xoá zalo_history.db và threads_cache.json trên máy này. \
-                                     Không thể hoàn tác, và tin nhắn cũ chỉ tải lại được từ đám mây Zalo.",
-                                )
-                                .size(12.5)
-                                .color(pal.text_secondary),
-                            )
-                            .wrap(),
-                        );
-                        ui.add_space(4.0);
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new("Phiên đăng nhập trong session.json giữ nguyên.")
-                                    .size(12.0)
-                                    .color(pal.text_muted),
-                            )
-                            .wrap(),
-                        );
-                        ui.add_space(12.0);
-                        ui.horizontal_wrapped(|ui| {
-                            if ui
-                                .add_sized(
-                                    [140.0, 30.0],
-                                    egui::Button::new(
-                                        RichText::new("Xoá dữ liệu")
-                                            .size(12.5)
-                                            .color(pal.danger_text)
-                                            .strong(),
-                                    )
-                                    .fill(pal.danger.linear_multiply(0.12))
-                                    .rounding(Rounding::same(7.0)),
-                                )
-                                .on_hover_cursor(CursorIcon::PointingHand)
-                                .clicked()
-                            {
-                                confirm = true;
-                            }
-                            if ui
-                                .add_sized(
-                                    [100.0, 30.0],
-                                    egui::Button::new(
-                                        RichText::new("Huỷ").size(12.5).color(pal.text_secondary),
-                                    )
-                                    .fill(pal.bg_input)
-                                    .stroke(Stroke::new(1.0_f32, pal.border))
-                                    .rounding(Rounding::same(7.0)),
-                                )
-                                .on_hover_cursor(CursorIcon::PointingHand)
-                                .clicked()
-                            {
-                                cancel = true;
-                            }
-                        });
-                    });
-            });
+        if crate::gui::design_system::widgets::show_modal(
+            ctx,
+            pal,
+            "wipe_local_data_confirm",
+            "Xoá dữ liệu tin nhắn cục bộ",
+            width,
+            |ui| {
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(
+                            "Xoá zalo_history.db và threads_cache.json trên máy này. \
+                             Không thể hoàn tác, và tin nhắn cũ chỉ tải lại được từ đám mây Zalo.",
+                        )
+                        .size(12.5)
+                        .color(pal.text_secondary),
+                    )
+                    .wrap(),
+                );
+                ui.add_space(4.0);
+                ui.add(
+                    egui::Label::new(
+                        RichText::new("Phiên đăng nhập trong session.json giữ nguyên.")
+                            .size(12.0)
+                            .color(pal.text_muted),
+                    )
+                    .wrap(),
+                );
+                ui.add_space(14.0);
+                ui.horizontal_wrapped(|ui| {
+                    if crate::gui::design_system::widgets::button(
+                        ui,
+                        pal,
+                        crate::gui::design_system::widgets::ButtonKind::Danger,
+                        "Xoá dữ liệu",
+                        true,
+                    )
+                    .clicked()
+                    {
+                        confirm = true;
+                    }
+                    if crate::gui::design_system::widgets::button(
+                        ui,
+                        pal,
+                        crate::gui::design_system::widgets::ButtonKind::Secondary,
+                        "Huỷ",
+                        true,
+                    )
+                    .clicked()
+                    {
+                        cancel = true;
+                    }
+                });
+            },
+        )
+        .is_some()
+        {
+            cancel = true;
+        }
         if confirm {
             self.wipe_confirm_open = false;
             if let Some(tx) = WORKER_TX.get() {
                 let _ = tx.send(WorkerCmd::WipeLocalData);
             }
-        } else if cancel || !open {
+        } else if cancel {
             self.wipe_confirm_open = false;
         }
     }
@@ -7800,96 +7784,77 @@ impl ZaloGuiApp {
         if !self.logout_confirm_open {
             return;
         }
-        if ctx.input(|i| i.key_pressed(Key::Escape)) {
-            self.logout_confirm_open = false;
-            return;
-        }
         let screen = ctx.screen_rect();
-        let mut open = true;
+        let width = (screen.width() - 24.0).clamp(260.0, 390.0);
         let mut confirm = false;
         let mut cancel = false;
-        egui::Window::new("Xác nhận đăng xuất")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(
-                (screen.width() - 24.0).clamp(260.0, 390.0),
-                (screen.height() - 32.0).clamp(165.0, 220.0),
-            ))
-            .show(ctx, |ui| {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        let acc_label = if self.user_name.trim().is_empty() {
-                            "tài khoản hiện tại".to_string()
-                        } else {
-                            format!("tài khoản \"{}\"", self.user_name)
-                        };
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(format!("Bạn có chắc chắn muốn đăng xuất khỏi {acc_label}?"))
-                                    .size(13.0)
-                                    .color(pal.text_primary)
-                                    .strong(),
-                            )
-                            .wrap(),
-                        );
-                        ui.add_space(6.0);
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(
-                                    "Phiên đăng nhập và lịch sử trò chuyện vẫn được lưu trong danh sách tài khoản trên thiết bị để bạn có thể đăng nhập lại chỉ với 1 cú nhấp mà không cần quét lại mã QR.",
-                                )
-                                .size(12.0)
-                                .color(pal.text_secondary),
-                            )
-                            .wrap(),
-                        );
-                        ui.add_space(14.0);
-                        ui.horizontal_wrapped(|ui| {
-                            if ui
-                                .add_sized(
-                                    [140.0, 32.0],
-                                    egui::Button::new(
-                                        RichText::new("Đăng xuất")
-                                            .size(12.5)
-                                            .color(pal.danger_text)
-                                            .strong(),
-                                    )
-                                    .fill(pal.danger.linear_multiply(0.14))
-                                    .stroke(Stroke::new(1.0_f32, pal.danger.linear_multiply(0.45)))
-                                    .rounding(Rounding::same(7.0)),
-                                )
-                                .on_hover_cursor(CursorIcon::PointingHand)
-                                .clicked()
-                            {
-                                confirm = true;
-                            }
-                            if ui
-                                .add_sized(
-                                    [105.0, 32.0],
-                                    egui::Button::new(
-                                        RichText::new("Hủy").size(12.5).color(pal.text_secondary),
-                                    )
-                                    .fill(pal.bg_input)
-                                    .stroke(Stroke::new(1.0_f32, pal.border))
-                                    .rounding(Rounding::same(7.0)),
-                                )
-                                .on_hover_cursor(CursorIcon::PointingHand)
-                                .clicked()
-                            {
-                                cancel = true;
-                            }
-                        });
-                    });
-            });
+        let acc_label = if self.user_name.trim().is_empty() {
+            "tài khoản hiện tại".to_string()
+        } else {
+            format!("tài khoản \"{}\"", self.user_name)
+        };
+        if crate::gui::design_system::widgets::show_modal(
+            ctx,
+            pal,
+            "logout_account_confirm",
+            "Xác nhận đăng xuất",
+            width,
+            |ui| {
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(format!("Bạn có chắc chắn muốn đăng xuất khỏi {acc_label}?"))
+                            .size(13.0)
+                            .color(pal.text_primary)
+                            .strong(),
+                    )
+                    .wrap(),
+                );
+                ui.add_space(6.0);
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(
+                            "Phiên đăng nhập và lịch sử trò chuyện vẫn được lưu trong danh sách tài khoản trên thiết bị để bạn có thể đăng nhập lại chỉ với 1 cú nhấp mà không cần quét lại mã QR.",
+                        )
+                        .size(12.0)
+                        .color(pal.text_secondary),
+                    )
+                    .wrap(),
+                );
+                ui.add_space(14.0);
+                ui.horizontal_wrapped(|ui| {
+                    if crate::gui::design_system::widgets::button(
+                        ui,
+                        pal,
+                        crate::gui::design_system::widgets::ButtonKind::Danger,
+                        "Đăng xuất",
+                        true,
+                    )
+                    .clicked()
+                    {
+                        confirm = true;
+                    }
+                    if crate::gui::design_system::widgets::button(
+                        ui,
+                        pal,
+                        crate::gui::design_system::widgets::ButtonKind::Secondary,
+                        "Hủy",
+                        true,
+                    )
+                    .clicked()
+                    {
+                        cancel = true;
+                    }
+                });
+            },
+        )
+        .is_some()
+        {
+            cancel = true;
+        }
         if confirm {
             self.logout_confirm_open = false;
             self.settings_modal_open = false;
             self.profile_menu_open = false;
-            // Lưu note pending và snapshot tài khoản hiện tại trước khi xóa session gốc (#80, #130)
-            // để màn hình đăng nhập có thể đăng nhập lại 1-click mà không cần quét lại QR.
             self.flush_group_note_pending();
             if !self.user_uin.is_empty() {
                 let _ = crate::account_manager::save_current_account_snapshot(&self.user_uin);
@@ -7907,7 +7872,7 @@ impl ZaloGuiApp {
                 let _ = tx.send(WorkerCmd::Logout);
                 let _ = tx.send(WorkerCmd::RequestQr);
             }
-        } else if cancel || !open {
+        } else if cancel {
             self.logout_confirm_open = false;
         }
     }
@@ -8079,32 +8044,32 @@ impl ZaloGuiApp {
             .map(|t| (t.id.clone(), t.name.clone(), t.is_group))
             .collect();
         let screen = ctx.screen_rect();
-        let mut open = true;
+        let width = (screen.width() - 24.0).clamp(260.0, 380.0);
         let mut chosen: Option<(String, bool, String)> = None;
-        egui::Window::new("Chuyển tiếp tin nhắn")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(
-                (screen.width() - 24.0).clamp(260.0, 360.0),
-                (screen.height() - 32.0).clamp(240.0, 420.0),
-            ))
-            .show(ctx, |ui| {
+        let dismissed = crate::gui::design_system::widgets::show_modal(
+            ctx,
+            pal,
+            "forward_message_modal",
+            "Chuyển tiếp tin nhắn",
+            width,
+            |ui| {
                 ui.label(
                     RichText::new(format!("Nội dung: {preview}"))
                         .size(12.5)
                         .color(pal.text_secondary),
                 );
                 ui.add_space(6.0);
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.forward_filter)
-                        .hint_text("Tìm hội thoại…")
-                        .desired_width(f32::INFINITY),
+                let _ = crate::gui::design_system::widgets::search_field(
+                    ui,
+                    pal,
+                    Id::new("forward_dialog_search"),
+                    &mut self.forward_filter,
+                    "Tìm hội thoại…",
+                    ui.available_width(),
                 );
                 ui.add_space(6.0);
                 egui::ScrollArea::vertical()
-                    .max_height(320.0)
+                    .max_height(300.0)
                     .show(ui, |ui| {
                         for (id, name, is_group) in &candidates {
                             let label = if *is_group {
@@ -8113,9 +8078,12 @@ impl ZaloGuiApp {
                                 name.clone()
                             };
                             let btn = egui::Button::new(RichText::new(label).size(13.5))
-                                .fill(pal.bg_input);
+                                .fill(pal.bg_input)
+                                .rounding(Rounding::same(
+                                    crate::gui::design_system::tokens::radius::MD,
+                                ));
                             if ui
-                                .add_sized([ui.available_width(), 30.0], btn)
+                                .add_sized([ui.available_width(), 32.0], btn)
                                 .on_hover_cursor(CursorIcon::PointingHand)
                                 .clicked()
                             {
@@ -8123,7 +8091,9 @@ impl ZaloGuiApp {
                             }
                         }
                     });
-            });
+            },
+        )
+        .is_some();
         if let Some((target_id, target_is_group, target_name)) = chosen {
             if let (Some(msg), Some(tx)) = (self.forward_msg.take(), WORKER_TX.get()) {
                 let _ = tx.send(WorkerCmd::Forward {
@@ -8136,7 +8106,7 @@ impl ZaloGuiApp {
                 self.status_msg = format!("Đang chuyển tiếp tới {target_name}…");
                 ctx.request_repaint();
             }
-        } else if !open {
+        } else if dismissed {
             self.forward_msg = None;
         }
     }
