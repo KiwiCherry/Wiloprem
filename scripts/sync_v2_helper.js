@@ -22,7 +22,7 @@ const MESSAGE_FILE = path.join(TEMP_DIR, "sync_v2_message.bin");
 //   2. Zalo PC đã cài trên máy (glob hash bất kỳ — hash đổi mỗi release Zalo)
 //   3. Thư mục assets cạnh script (dev tự copy vào, không commit)
 function findWasm() {
-    const override = process.env.CTDOZLITE_ZPROTO_WASM;
+    const override = process.env.WILOPREM_ZPROTO_WASM || process.env.CTDOZLITE_ZPROTO_WASM;
     if (override && fs.existsSync(override)) return override;
     const candidates = [];
     if (process.platform === 'darwin') {

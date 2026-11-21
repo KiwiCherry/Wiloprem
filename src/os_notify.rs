@@ -73,7 +73,7 @@ fn dispatch(title: &str, body: &str, linux_icon: &str, mac_sound: Option<&str>) 
     #[cfg(target_os = "linux")]
     {
         let _ = std::process::Command::new("notify-send")
-            .args(["-a", "ctdozlite", "-i", linux_icon, "--", &title, &body])
+            .args(["-a", "Wiloprem", "-i", linux_icon, "--", &title, &body])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -92,8 +92,8 @@ fn dispatch(title: &str, body: &str, linux_icon: &str, mac_sound: Option<&str>) 
             "Add-Type -AssemblyName System.Windows.Forms; \
              $n = New-Object System.Windows.Forms.NotifyIcon; \
              $n.Icon = [System.Drawing.SystemIcons]::Information; \
-             $n.BalloonTipTitle = $env:CTDOZLITE_NOTIFY_TITLE; \
-             $n.BalloonTipText = $env:CTDOZLITE_NOTIFY_BODY; \
+             $n.BalloonTipTitle = $env:WILOPREM_NOTIFY_TITLE; \
+             $n.BalloonTipText = $env:WILOPREM_NOTIFY_BODY; \
              $n.Visible = $true; \
              $n.ShowBalloonTip(6000); \
              Start-Sleep -Seconds 6; \
@@ -107,8 +107,8 @@ fn dispatch(title: &str, body: &str, linux_icon: &str, mac_sound: Option<&str>) 
                 "-Command",
                 ps_script,
             ])
-            .env("CTDOZLITE_NOTIFY_TITLE", &title)
-            .env("CTDOZLITE_NOTIFY_BODY", &body)
+            .env("WILOPREM_NOTIFY_TITLE", &title)
+            .env("WILOPREM_NOTIFY_BODY", &body)
             .creation_flags(CREATE_NO_WINDOW)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
@@ -144,7 +144,7 @@ pub fn notify_chat_batch(banners: &[(String, String)]) {
     }
     if banners.len() > 3 {
         notify(
-            "ctdozlite",
+            "Wiloprem",
             &format!("… và {} hội thoại khác có tin nhắn mới", banners.len() - 3),
         );
     }

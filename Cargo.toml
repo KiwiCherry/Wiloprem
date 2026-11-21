@@ -1,13 +1,13 @@
 [package]
-name = "ctdozlite"
+name = "wiloprem"
 version = "0.1.2"
 edition = "2021"
 authors = ["TIPC1110 <tienichpc1110@gmail.com>", "Đỗ Thành (thanhdo1110) <https://github.com/thanhdo1110>"]
-description = "Lightweight, high-performance native Zalo PC client written in Rust (zero Node.js, zero Electron)"
+description = "Wiloprem — Lightweight, high-performance native Zalo PC client written in Rust (zero Node.js, zero Electron)"
 homepage = "https://ctdozlite.ctdo.net/"
 repository = "https://github.com/ctdoteam1110/ctdozlite"
 license = "MIT OR Apache-2.0"
-default-run = "ctdozlite"
+default-run = "wiloprem"
 
 [patch.crates-io]
 egui-winit = { path = "vendor/egui-winit" }
@@ -56,7 +56,7 @@ name = "zalo_rust"
 path = "src/lib.rs"
 
 [[bin]]
-name = "ctdozlite"
+name = "wiloprem"
 path = "src/main.rs"
 
 [[bin]]
@@ -84,7 +84,7 @@ name = "view_feed"
 path = "src/bin/view_feed.rs"
 
 [package.metadata.deb]
-name = "ctdozlite"
+name = "wiloprem"
 maintainer = "TIPC1110 <tienichpc1110@gmail.com>"
 copyright = "2026, TIPC1110 <tienichpc1110@gmail.com>"
 license-file = ["LICENSE-MIT", "0"]
@@ -93,11 +93,11 @@ recommends = "ffmpeg, zenity, xclip, wl-clipboard, fonts-noto-core"
 section = "net"
 priority = "optional"
 assets = [
-    ["target/release/ctdozlite", "usr/bin/", "755"],
-    ["packaging/linux/ctdozlite", "usr/bin/", "755"],
-    ["packaging/linux/ctdozlite.desktop", "usr/share/applications/", "644"],
-    ["src/assets/app_icon.png", "usr/share/icons/hicolor/256x256/apps/ctdozlite.png", "644"],
-    ["README.md", "usr/share/doc/ctdozlite/README.md", "644"],
+    ["target/release/wiloprem", "usr/bin/", "755"],
+    ["packaging/linux/wiloprem", "usr/bin/", "755"],
+    ["packaging/linux/wiloprem.desktop", "usr/share/applications/", "644"],
+    ["src/assets/app_icon.png", "usr/share/icons/hicolor/256x256/apps/wiloprem.png", "644"],
+    ["README.md", "usr/share/doc/wiloprem/README.md", "644"],
 ]
 
 [profile.release]

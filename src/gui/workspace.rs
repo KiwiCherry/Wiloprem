@@ -1653,9 +1653,9 @@ impl ZaloGuiApp {
                             }
                             let total_unread: usize = self.unread_counts.values().sum();
                             let title = if total_unread > 0 {
-                                format!("({total_unread}) ctdozlite")
+                                format!("({total_unread}) Wiloprem")
                             } else {
-                                "ctdozlite".to_string()
+                                "Wiloprem".to_string()
                             };
                             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
                             if let Some(tx) = WORKER_TX.get() {
@@ -5358,7 +5358,7 @@ impl ZaloGuiApp {
                                             }
                                         } else {
                                             format!(
-                                                "🚀 Đã có bản cập nhật mới ctdozlite v{} trên GitHub Releases!",
+                                                "🚀 Đã có bản cập nhật mới Wiloprem v{} trên GitHub Releases!",
                                                 upd.latest_version
                                             )
                                         };
@@ -9949,9 +9949,9 @@ impl ZaloGuiApp {
                     if self.unread_counts.remove(&thread_id).is_some() {
                         let total_unread: usize = self.unread_counts.values().sum();
                         let title = if total_unread > 0 {
-                            format!("({total_unread}) ctdozlite")
+                            format!("({total_unread}) Wiloprem")
                         } else {
-                            "ctdozlite".to_string()
+                            "Wiloprem".to_string()
                         };
                         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
                     }

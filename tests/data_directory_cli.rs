@@ -39,7 +39,7 @@ impl Drop for Fixture {
 fn explicit_storage_is_stable_and_invalid_directory_fails_before_network() {
     let fixture = Fixture::new();
     let data = fixture.0.join("explicit-data");
-    let result = Command::new(env!("CARGO_BIN_EXE_ctdozlite"))
+    let result = Command::new(env!("CARGO_BIN_EXE_wiloprem"))
         .args([
             "--data-dir",
             data.to_str().unwrap(),
@@ -59,7 +59,7 @@ fn explicit_storage_is_stable_and_invalid_directory_fails_before_network() {
         data.to_str().unwrap()
     );
     std::fs::write(data.join("keep.fixture"), b"retained fixture").unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_ctdozlite"))
+    let result = Command::new(env!("CARGO_BIN_EXE_wiloprem"))
         .args([
             "--data-dir",
             data.to_str().unwrap(),
@@ -74,7 +74,7 @@ fn explicit_storage_is_stable_and_invalid_directory_fails_before_network() {
         std::fs::read(data.join("keep.fixture")).unwrap(),
         b"retained fixture"
     );
-    let bad = Command::new(env!("CARGO_BIN_EXE_ctdozlite"))
+    let bad = Command::new(env!("CARGO_BIN_EXE_wiloprem"))
         .args([
             "--data-dir",
             data.join("keep.fixture").to_str().unwrap(),
@@ -100,11 +100,11 @@ fn finder_bundle_with_root_cwd_selects_private_application_support() {
     let fixture = Fixture::new();
     let bundle = fixture.0.join("Fixture.app/Contents/MacOS");
     std::fs::create_dir_all(&bundle).unwrap();
-    let executable = bundle.join("ctdozlite");
-    std::fs::copy(env!("CARGO_BIN_EXE_ctdozlite"), &executable).unwrap();
+    let executable = bundle.join("wiloprem");
+    std::fs::copy(env!("CARGO_BIN_EXE_wiloprem"), &executable).unwrap();
     let home = fixture.0.join("home");
     std::fs::create_dir(&home).unwrap();
-    let expected = home.join("Library/Application Support/ctdozlite");
+    let expected = home.join("Library/Application Support/Wiloprem");
     for _ in 0..2 {
         let result = Command::new(&executable)
             .args(["--print-data-dir", "--logout"])
@@ -141,11 +141,11 @@ fn finder_bundle_with_root_cwd_selects_private_application_support() {
 #[test]
 fn legacy_cli_keeps_cwd_and_version_does_not_prepare_storage() {
     eprintln!(
-        "CARGO_BIN_EXE_ctdozlite={}",
-        env!("CARGO_BIN_EXE_ctdozlite")
+        "CARGO_BIN_EXE_wiloprem={}",
+        env!("CARGO_BIN_EXE_wiloprem")
     );
     let fixture = Fixture::new();
-    let result = Command::new(env!("CARGO_BIN_EXE_ctdozlite"))
+    let result = Command::new(env!("CARGO_BIN_EXE_wiloprem"))
         .args(["--print-data-dir", "--logout"])
         .current_dir(&fixture.0)
         .output()
@@ -157,7 +157,7 @@ fn legacy_cli_keeps_cwd_and_version_does_not_prepare_storage() {
         let home = std::env::var_os("HOME")
             .map(std::path::PathBuf::from)
             .expect("HOME environment variable required on macOS");
-        home.join("Library/Application Support/ctdozlite")
+        home.join("Library/Application Support/Wiloprem")
     };
     #[cfg(not(target_os = "macos"))]
     let expected = fixture.0.clone();
@@ -167,7 +167,7 @@ fn legacy_cli_keeps_cwd_and_version_does_not_prepare_storage() {
         expected.canonicalize().unwrap_or_else(|_| expected.clone())
     );
     let data = fixture.0.join("not-created");
-    let result = Command::new(env!("CARGO_BIN_EXE_ctdozlite"))
+    let result = Command::new(env!("CARGO_BIN_EXE_wiloprem"))
         .args(["--version", "--data-dir", data.to_str().unwrap()])
         .env_remove("HOME")
         .current_dir(&fixture.0)
@@ -176,7 +176,7 @@ fn legacy_cli_keeps_cwd_and_version_does_not_prepare_storage() {
     assert!(result.status.success());
     assert_eq!(
         String::from_utf8_lossy(&result.stdout).trim(),
-        format!("ctdozlite v{}", env!("CARGO_PKG_VERSION"))
+        format!("Wiloprem v{}", env!("CARGO_PKG_VERSION"))
     );
     assert!(!data.exists());
     assert_eq!(std::fs::read_dir(&fixture.0).unwrap().count(), 0);
@@ -193,7 +193,7 @@ fn malformed_storage_options_fail_before_startup() {
         vec!["--data-dir", "-d"],
         vec!["--data-dir", "-v"],
     ] {
-        let result = Command::new(env!("CARGO_BIN_EXE_ctdozlite"))
+        let result = Command::new(env!("CARGO_BIN_EXE_wiloprem"))
             .args(&args)
             .arg("--logout")
             .env_remove("HOME")
@@ -212,8 +212,8 @@ fn bundled_version_does_not_create_application_support_or_require_home() {
     let fixture = Fixture::new();
     let bundle = fixture.0.join("Fixture.app/Contents/MacOS");
     std::fs::create_dir_all(&bundle).unwrap();
-    let executable = bundle.join("ctdozlite");
-    std::fs::copy(env!("CARGO_BIN_EXE_ctdozlite"), &executable).unwrap();
+    let executable = bundle.join("wiloprem");
+    std::fs::copy(env!("CARGO_BIN_EXE_wiloprem"), &executable).unwrap();
     let home = fixture.0.join("home-not-created");
     let result = Command::new(&executable)
         .arg("--version")
@@ -236,7 +236,7 @@ fn bundled_version_does_not_create_application_support_or_require_home() {
 fn relative_storage_is_private_and_unrelated_cwd_state_is_untouched() {
     let fixture = Fixture::new();
     std::fs::write(fixture.0.join("session.json"), b"existing fixture").unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_ctdozlite"))
+    let result = Command::new(env!("CARGO_BIN_EXE_wiloprem"))
         .args(["--data-dir=relative-data", "--print-data-dir", "--logout"])
         .env_remove("HOME")
         .current_dir(&fixture.0)

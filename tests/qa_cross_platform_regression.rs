@@ -534,9 +534,9 @@ fn qa_multi_account_snapshot_list_switch_and_delete_lifecycle() {
 
 #[test]
 fn qa_cross_platform_data_dir_and_profile_isolation() {
-    let cwd = PathBuf::from("/workspace/ctdozlite");
-    let mac_bundle_exe = PathBuf::from("/Applications/ctdozlite.app/Contents/MacOS/ctdozlite");
-    let linux_bin_exe = PathBuf::from("/usr/bin/ctdozlite");
+    let cwd = PathBuf::from("/workspace/wiloprem");
+    let mac_bundle_exe = PathBuf::from("/Applications/Wiloprem.app/Contents/MacOS/wiloprem");
+    let linux_bin_exe = PathBuf::from("/usr/bin/wiloprem");
     let home = PathBuf::from("/Users/tester");
 
     // macOS .app bundle tự động ánh xạ vào Application Support và bật chế độ private
@@ -544,7 +544,7 @@ fn qa_cross_platform_data_dir_and_profile_isolation() {
         data_dir::resolve(&[], &cwd, &mac_bundle_exe, Some(&home), true).unwrap();
     assert_eq!(
         mac_path,
-        PathBuf::from("/Users/tester/Library/Application Support/ctdozlite")
+        PathBuf::from("/Users/tester/Library/Application Support/Wiloprem")
     );
     assert!(mac_priv);
 
@@ -559,7 +559,7 @@ fn qa_cross_platform_data_dir_and_profile_isolation() {
     .unwrap();
     assert_eq!(
         prof_mac,
-        PathBuf::from("/Users/tester/Library/Application Support/ctdozlite/profiles/work_account_01")
+        PathBuf::from("/Users/tester/Library/Application Support/Wiloprem/profiles/work_account_01")
     );
     assert!(prof_priv);
 

@@ -1,6 +1,6 @@
 [book]
-title = "ctdozlite"
-description = "Tài liệu người dùng ctdozlite — Zalo desktop client viết bằng Rust"
+title = "Wiloprem"
+description = "Tài liệu người dùng Wiloprem — Zalo desktop client viết bằng Rust"
 authors = ["CTDOTEAM"]
 language = "vi"
 src = "docs"

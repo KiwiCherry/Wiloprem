@@ -12,7 +12,8 @@
 use anyhow::Context;
 use anyhow::Result;
 
-pub const SERVICE: &str = "ctdozlite";
+pub const SERVICE: &str = "wiloprem";
+pub const LEGACY_SERVICE: &str = "ctdozlite";
 pub const ACCOUNT: &str = "llm-api-key";
 
 /// Where the effective key came from (value never logged).
@@ -58,7 +59,7 @@ pub fn resolve_key(settings_key: &str) -> (String, KeySource) {
 pub fn describe_source(s: KeySource) -> &'static str {
     match s {
         KeySource::Env => "env",
-        KeySource::Keychain => "OS keychain (ctdozlite/llm-api-key)",
+        KeySource::Keychain => "OS keychain (wiloprem/llm-api-key)",
         KeySource::Settings => "app_settings.json (khuyên dời sang keychain)",
         KeySource::None => "chưa có",
     }
@@ -70,10 +71,17 @@ pub fn keychain_get() -> Result<String> {
         .args(["find-generic-password", "-s", SERVICE, "-a", ACCOUNT, "-w"])
         .output()
         .context("gọi security thất bại")?;
-    if !out.status.success() {
+    if out.status.success() {
+        return Ok(String::from_utf8_lossy(&out.stdout).trim().to_string());
+    }
+    let legacy = std::process::Command::new("security")
+        .args(["find-generic-password", "-s", LEGACY_SERVICE, "-a", ACCOUNT, "-w"])
+        .output()
+        .context("gọi security thất bại")?;
+    if !legacy.status.success() {
         anyhow::bail!("keychain: chưa lưu (dùng --auth set)");
     }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    Ok(String::from_utf8_lossy(&legacy.stdout).trim().to_string())
 }
 
 #[cfg(target_os = "macos")]

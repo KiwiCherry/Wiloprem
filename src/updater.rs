@@ -607,7 +607,7 @@ pub fn parse_github_release_value(
         .and_then(|v| v.as_str())
         .filter(|s| !s.trim().is_empty())
         .map(str::to_string)
-        .unwrap_or_else(|| format!("ctdozlite v{latest_ver}"));
+        .unwrap_or_else(|| format!("Wiloprem v{latest_ver}"));
 
     let release_notes = rel
         .get("body")
@@ -723,7 +723,7 @@ pub fn parse_github_release_value(
 
 /// Dispatch a non-blocking native OS desktop notification announcing a new GitHub release.
 pub fn notify_os_new_update(latest_version: &str, current_version: &str, release_title: &str) {
-    let title = format!("ctdozlite — Có bản cập nhật mới v{latest_version}");
+    let title = format!("Wiloprem — Có bản cập nhật mới v{latest_version}");
     let body = if release_title.trim().is_empty() {
         format!("Phiên bản mới v{latest_version} đã sẵn sàng trên GitHub (hiện tại: v{current_version}). Mở ứng dụng để cập nhật tự động.")
     } else {
@@ -750,7 +750,7 @@ pub fn notify_os_new_update(latest_version: &str, current_version: &str, release
         let _ = std::process::Command::new("notify-send")
             .args([
                 "-a",
-                "ctdozlite",
+                "Wiloprem",
                 "-i",
                 "software-update-available",
                 &title,

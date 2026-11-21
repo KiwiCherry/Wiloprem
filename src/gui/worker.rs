@@ -748,7 +748,9 @@ pub(super) fn spawn_session_worker(session: Session, gui_tx: GuiTx, egui_ctx: eg
                 });
 
                 // Scheduled messages worker (#38) + optional HTTP REST API server (#35)
-                if let Ok(port_str) = std::env::var("CTDOZLITE_API_PORT") {
+                if let Ok(port_str) = std::env::var("WILOPREM_API_PORT")
+                    .or_else(|_| std::env::var("CTDOZLITE_API_PORT"))
+                {
                     if let Ok(port) = port_str.parse::<u16>() {
                         if port > 0 {
                             let s_api = session.clone();
@@ -4746,7 +4748,7 @@ const GITHUB_REPO: &str = "ctdoteam1110/ctdozlite";
 pub(crate) async fn fetch_github_latest_release() -> Result<UpdateCheckResult, String> {
     let current_ver = env!("CARGO_PKG_VERSION").to_string();
     let client = reqwest::Client::builder()
-        .user_agent(format!("ctdozlite/{current_ver}"))
+        .user_agent(format!("Wiloprem/{current_ver}"))
         .timeout(Duration::from_secs(12))
         .build()
         .map_err(|e| format!("Khởi tạo HTTP client thất bại: {e}"))?;
@@ -4859,7 +4861,7 @@ async fn apply_github_release_update(
     ctx: &egui::Context,
 ) -> Result<bool, String> {
     let client = reqwest::Client::builder()
-        .user_agent(format!("ctdozlite/{target_version}"))
+        .user_agent(format!("Wiloprem/{target_version}"))
         .timeout(Duration::from_secs(240))
         .build()
         .map_err(|e| format!("Khởi tạo HTTP client thất bại: {e}"))?;
@@ -5170,7 +5172,7 @@ pub(crate) fn capture_screen_interactive(gui_tx: crate::gui::GuiTx, ctx: egui::C
     #[cfg(not(target_os = "windows"))]
     {
         let now = crate::login::unix_now();
-        let temp_path = std::env::temp_dir().join(format!("ctdozlite_screenshot_{now}.png"));
+        let temp_path = std::env::temp_dir().join(format!("wiloprem_screenshot_{now}.png"));
 
         #[cfg(target_os = "macos")]
         let status = std::process::Command::new("/usr/sbin/screencapture")

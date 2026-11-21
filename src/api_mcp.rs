@@ -130,7 +130,7 @@ pub async fn handle_mcp_request_bound(
             "result": {
                 "protocolVersion": "2024-11-05",
                 "serverInfo": {
-                    "name": "ctdozlite-mcp",
+                    "name": "wiloprem-mcp",
                     "version": env!("CARGO_PKG_VERSION")
                 },
                 "capabilities": {
@@ -207,7 +207,7 @@ pub async fn handle_mcp_request_bound(
                 "tools": [
                     {
                         "name": "zalo_status",
-                        "description": "Kiểm tra trạng thái phiên đăng nhập ctdozlite và thống kê dữ liệu cục bộ",
+                        "description": "Kiểm tra trạng thái phiên đăng nhập Wiloprem và thống kê dữ liệu cục bộ",
                         "inputSchema": {
                             "type": "object",
                             "properties": {}
@@ -378,7 +378,7 @@ async fn execute_tool_call(
                 false,
                 json!({
                     "ok": true,
-                    "app": "ctdozlite",
+                    "app": "Wiloprem",
                     "version": env!("CARGO_PKG_VERSION"),
                     "logged_in": logged_in,
                     "uin": uin,
@@ -839,7 +839,8 @@ pub async fn run_local_http_server(
 ) -> Result<()> {
     let bind_addr = format!("127.0.0.1:{port}");
     let listener = TcpListener::bind(&bind_addr).await?;
-    let expected_token = std::env::var("CTDOZLITE_API_TOKEN")
+    let expected_token = std::env::var("WILOPREM_API_TOKEN")
+        .or_else(|_| std::env::var("CTDOZLITE_API_TOKEN"))
         .ok()
         .filter(|s| !s.trim().is_empty());
 
@@ -1022,7 +1023,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(init_resp["result"]["serverInfo"]["name"], "ctdozlite-mcp");
+        assert_eq!(init_resp["result"]["serverInfo"]["name"], "wiloprem-mcp");
 
         // 2. MCP tools/list
         let tools_resp = handle_mcp_request(

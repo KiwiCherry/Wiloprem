@@ -43,7 +43,9 @@ use wasmtime::{Caller, Engine, Extern, Func, Instance, Linker, Memory, Module, S
 /// Returns `None` when not found (callers turn this into a clear error
 /// telling the user to install Zalo PC or set the env var).
 pub fn find_wasm_path() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("CTDOZLITE_ZPROTO_WASM") {
+    if let Ok(p) = std::env::var("WILOPREM_ZPROTO_WASM")
+        .or_else(|_| std::env::var("CTDOZLITE_ZPROTO_WASM"))
+    {
         let p = PathBuf::from(p);
         if p.is_file() {
             return Some(p);

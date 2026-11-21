@@ -86,7 +86,7 @@ pub fn resolve(
         if !home.is_absolute() && !home.to_str().is_some_and(|s| s.starts_with('/')) {
             bail!("HOME phải là đường dẫn tuyệt đối");
         }
-        (home.join("Library/Application Support/ctdozlite"), true)
+        (home.join("Library/Application Support/Wiloprem"), true)
     } else {
         (cwd.to_path_buf(), false)
     };
@@ -94,6 +94,89 @@ pub fn resolve(
         return Ok((base.join("profiles").join(prof), true));
     }
     Ok((base, is_private))
+}
+
+/// Non-destructively migrate session, settings, and SQLite history from legacy `ctdozlite` /
+/// `widozlite` storage directories when a fresh `Wiloprem` directory has no existing session or DB.
+///
+/// Only runs when `target_dir` itself is named `Wiloprem` / `wiloprem` (such as
+/// `~/Library/Application Support/Wiloprem` or `%LOCALAPPDATA%\Programs\Wiloprem`) so arbitrary
+/// working directories, `--data-dir` paths, and test fixtures are never polluted.
+fn migrate_legacy_data_if_needed(target_dir: &Path, args: &[String]) {
+    if args
+        .iter()
+        .any(|a| a == "--print-data-dir" || a == "--logout" || a.starts_with("--data-dir"))
+    {
+        return;
+    }
+    let is_wiloprem_dir = target_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.eq_ignore_ascii_case("wiloprem"));
+    if !is_wiloprem_dir {
+        return;
+    }
+    if target_dir.join("session.json").exists() || target_dir.join("zalo_history.db").exists() {
+        return;
+    }
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        candidates.push(home.join("Library/Application Support/ctdozlite"));
+        candidates.push(home.join("Library/Application Support/widozlite"));
+        candidates.push(home.join(".local/share/ctdozlite"));
+        candidates.push(home.join(".config/ctdozlite"));
+    }
+    if let Some(local_appdata) = std::env::var_os("LOCALAPPDATA").map(PathBuf::from) {
+        candidates.push(local_appdata.join("ctdozlite"));
+        candidates.push(local_appdata.join("Programs").join("ctdozlite"));
+        candidates.push(local_appdata.join("widozlite"));
+        candidates.push(local_appdata.join("Programs").join("widozlite"));
+    }
+    if let Some(appdata) = std::env::var_os("APPDATA").map(PathBuf::from) {
+        candidates.push(appdata.join("ctdozlite"));
+        candidates.push(appdata.join("widozlite"));
+    }
+
+    for legacy in candidates {
+        if legacy == target_dir || !legacy.is_dir() {
+            continue;
+        }
+        let has_state = legacy.join("session.json").is_file()
+            || legacy.join("zalo_history.db").is_file()
+            || legacy.join("accounts").is_dir();
+        if !has_state {
+            continue;
+        }
+        for file_name in [
+            "session.json",
+            "zalo_history.db",
+            "threads_cache.json",
+            "app_settings.json",
+            "custom_theme.json",
+        ] {
+            let src = legacy.join(file_name);
+            let dst = target_dir.join(file_name);
+            if src.is_file() && !dst.exists() {
+                let _ = std::fs::copy(&src, &dst);
+            }
+        }
+        let src_acc = legacy.join("accounts");
+        let dst_acc = target_dir.join("accounts");
+        if src_acc.is_dir() && !dst_acc.exists() {
+            let _ = std::fs::create_dir_all(&dst_acc);
+            if let Ok(entries) = std::fs::read_dir(&src_acc) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_file() {
+                        if let Some(name) = p.file_name() {
+                            let _ = std::fs::copy(&p, dst_acc.join(name));
+                        }
+                    }
+                }
+            }
+        }
+        break;
+    }
 }
 
 /// Validate storage before any persistent state is opened.
@@ -143,6 +226,7 @@ pub fn initialize(args: &[String]) -> Result<PathBuf> {
         cfg!(target_os = "macos"),
     )?;
     prepare(&path, private)?;
+    migrate_legacy_data_if_needed(&path, args);
     // Legacy storage callers use relative paths; switch once before creating workers.
     std::env::set_current_dir(&path)
         .with_context(|| format!("Không chọn được thư mục dữ liệu {}", path.display()))?;
@@ -219,18 +303,18 @@ mod tests {
     #[test]
     fn resolves_bundle_cli_and_explicit_paths() {
         let cwd = Path::new("/work");
-        let exe = Path::new("/Applications/Zalo.app/Contents/MacOS/ctdozlite");
+        let exe = Path::new("/Applications/Zalo.app/Contents/MacOS/wiloprem");
         assert_eq!(
             resolve(&[], cwd, exe, Some(Path::new("/Users/fixture")), true).unwrap(),
             (
-                PathBuf::from("/Users/fixture/Library/Application Support/ctdozlite"),
+                PathBuf::from("/Users/fixture/Library/Application Support/Wiloprem"),
                 true
             )
         );
         assert_eq!(
-            resolve(&[], cwd, Path::new("/bin/ctdozlite"), Some(Path::new("/Users/fixture")), true).unwrap(),
+            resolve(&[], cwd, Path::new("/bin/wiloprem"), Some(Path::new("/Users/fixture")), true).unwrap(),
             (
-                PathBuf::from("/Users/fixture/Library/Application Support/ctdozlite"),
+                PathBuf::from("/Users/fixture/Library/Application Support/Wiloprem"),
                 true
             )
         );
@@ -264,13 +348,13 @@ mod tests {
             resolve(
                 &["--profile".into(), "acc_2".into()],
                 cwd,
-                Path::new("/bin/ctdozlite"),
+                Path::new("/bin/wiloprem"),
                 Some(Path::new("/Users/fixture")),
                 true
             )
             .unwrap(),
             (
-                PathBuf::from("/Users/fixture/Library/Application Support/ctdozlite/profiles/acc_2"),
+                PathBuf::from("/Users/fixture/Library/Application Support/Wiloprem/profiles/acc_2"),
                 true
             )
         );
@@ -302,7 +386,7 @@ mod tests {
     #[test]
     fn explicit_path_overrides_bundle_and_relative_home_is_rejected() {
         let cwd = Path::new("/work");
-        let exe = Path::new("/Applications/Fixture.app/Contents/MacOS/ctdozlite");
+        let exe = Path::new("/Applications/Fixture.app/Contents/MacOS/wiloprem");
         assert_eq!(
             resolve(&["--data-dir=/fixture-data".into()], cwd, exe, None, true).unwrap(),
             (PathBuf::from("/fixture-data"), true)
@@ -313,13 +397,13 @@ mod tests {
             resolve(
                 &[],
                 cwd,
-                Path::new("/Fixture.app/Contents/MacOS-extra/ctdozlite"),
+                Path::new("/Fixture.app/Contents/MacOS-extra/wiloprem"),
                 Some(Path::new("/Users/fixture")),
                 true
             )
             .unwrap(),
             (
-                PathBuf::from("/Users/fixture/Library/Application Support/ctdozlite"),
+                PathBuf::from("/Users/fixture/Library/Application Support/Wiloprem"),
                 true
             )
         );
@@ -327,7 +411,7 @@ mod tests {
         assert!(resolve(
             &[],
             cwd,
-            Path::new("/Fixture.app/Contents/MacOS-extra/ctdozlite"),
+            Path::new("/Fixture.app/Contents/MacOS-extra/wiloprem"),
             None,
             true
         )

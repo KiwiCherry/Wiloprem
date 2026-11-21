@@ -22,7 +22,7 @@ pub const POLL_SECS: u64 = 4;
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("ctdozlite v{}", env!("CARGO_PKG_VERSION"));
+        println!("Wiloprem v{}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
     if args.iter().any(|a| a == "--check-update") {
@@ -121,7 +121,7 @@ async fn main() -> Result<()> {
                     anyhow::bail!("--auth set <key>: thiếu key");
                 }
                 auth::keychain_set(key.trim())?;
-                println!("Đã lưu key vào OS keychain (ctdozlite/llm-api-key).");
+                println!("Đã lưu key vào OS keychain (wiloprem/llm-api-key).");
                 return Ok(());
             }
             "clear" => {
@@ -174,7 +174,8 @@ async fn main() -> Result<()> {
         .and_then(|i| args.get(i + 1))
         .and_then(|v| v.parse::<u16>().ok())
         .or_else(|| {
-            std::env::var("CTDOZLITE_API_PORT")
+            std::env::var("WILOPREM_API_PORT")
+                .or_else(|_| std::env::var("CTDOZLITE_API_PORT"))
                 .ok()
                 .and_then(|v| v.parse::<u16>().ok())
         });
@@ -305,7 +306,7 @@ async fn main() -> Result<()> {
     // Open the native GUI window IMMEDIATELY without blocking on network requests!
     // Background worker in `gui.rs` handles `get_server_info`, `get_friends`, and `poll_new_messages`.
     if force_gui || (!force_tui && !force_qr && !args.iter().any(|a| a.starts_with("--phone"))) {
-        println!("🚀 Đang khởi chạy giao diện đồ họa ctdozlite (egui)…");
+        println!("🚀 Đang khởi chạy giao diện đồ họa Wiloprem (egui)…");
         #[cfg(target_os = "windows")]
         if dev_mode {
             #[link(name = "kernel32")]
@@ -317,11 +318,11 @@ async fn main() -> Result<()> {
             }
         }
         let mut viewport = eframe::egui::ViewportBuilder::default()
-            .with_app_id("ctdozlite")
+            .with_app_id("wiloprem")
             .with_decorations(false)
             .with_inner_size([1020.0, 700.0])
             .with_min_inner_size([480.0, 360.0])
-            .with_title("ctdozlite");
+            .with_title("Wiloprem");
         if let Some(icon) = gui::load_app_icon() {
             viewport = viewport.with_icon(std::sync::Arc::new(icon));
         }
@@ -342,7 +343,7 @@ async fn main() -> Result<()> {
 
         let app_session = s;
         let res = eframe::run_native(
-            "ctdozlite",
+            "Wiloprem",
             native_options,
             Box::new(move |cc| {
                 Ok(Box::new(gui::ZaloGuiApp::new(

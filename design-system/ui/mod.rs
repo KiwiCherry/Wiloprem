@@ -1,6 +1,6 @@
-//! Design system for the egui desktop client.
+//! Design system for the Wiloprem egui desktop client.
 //!
-//! This module is compiled into the `ctdozlite` crate through a `#[path]` attribute in
+//! This module is compiled into the `wiloprem` crate through a `#[path]` attribute in
 //! `src/gui.rs`, so tokens, palettes and widgets live next to the design documentation
 //! (`design-system/zalo-rust-desktop/MASTER.md`) and nothing in `src/gui/` hardcodes
 //! colors, spacing or radii.

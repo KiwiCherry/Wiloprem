@@ -439,9 +439,13 @@ mod win32_frameless {
         }
 
         // Prefer exact main window title lookup before falling back to active/size heuristics.
-        let by_title = find_thread_window_by_title("ctdozlite");
+        let by_title = find_thread_window_by_title("Wiloprem");
         if by_title != 0 {
             return by_title;
+        }
+        let by_legacy_title = find_thread_window_by_title("ctdozlite");
+        if by_legacy_title != 0 {
+            return by_legacy_title;
         }
 
         // SAFETY: `GetActiveWindow` returns the calling thread's active window or zero.
@@ -2624,9 +2628,9 @@ impl ZaloGuiApp {
         }
         let total_unread: usize = self.unread_counts.values().sum();
         let title = if total_unread > 0 {
-            format!("({total_unread}) ctdozlite")
+            format!("({total_unread}) Wiloprem")
         } else {
-            "ctdozlite".to_string()
+            "Wiloprem".to_string()
         };
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
     }
@@ -3035,9 +3039,9 @@ impl ZaloGuiApp {
                             crate::os_notify::notify_chat_batch(&chat_banners);
                             let total_unread: usize = self.unread_counts.values().sum();
                             let title = if total_unread > 0 {
-                                format!("({total_unread}) ctdozlite")
+                                format!("({total_unread}) Wiloprem")
                             } else {
-                                "ctdozlite".to_string()
+                                "Wiloprem".to_string()
                             };
                             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
                             if !is_focused {
@@ -5238,7 +5242,7 @@ impl ZaloGuiApp {
 
                     ui.add_space(6.0);
                     ui.label(
-                        RichText::new("ctdozlite")
+                        RichText::new("Wiloprem")
                             .color(pal.text_primary)
                             .size(13.5)
                             .strong(),

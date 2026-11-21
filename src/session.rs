@@ -719,6 +719,7 @@ impl Session {
     pub fn new(verbose: bool, dump: bool, dump_raw: bool) -> Result<Self> {
         let jar = Arc::new(Jar::default());
         let env_proxy = std::env::var("ZALO_PROXY")
+            .or_else(|_| std::env::var("WILOPREM_PROXY"))
             .or_else(|_| std::env::var("CTDOZLITE_PROXY"))
             .ok()
             .and_then(|v| normalize_proxy_url(&v).ok().flatten());

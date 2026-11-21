@@ -2651,7 +2651,9 @@ pub fn import_history_from_path(src: &std::path::Path, dst_db_path: &str) -> Res
     if src.is_dir() {
         for candidate in [
             "zalo_history.db",
+            "wiloprem_history.db",
             "ctdozlite_history.db",
+            "widozlite_history.db",
             "threads_cache.json",
             "export.json",
         ] {

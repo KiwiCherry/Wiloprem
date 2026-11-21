@@ -2575,6 +2575,7 @@ pub async fn send_attachment_in_layout(
         };
         let clean_title = if file_name.starts_with("clipboard_")
             || file_name.starts_with("msedge_")
+            || file_name.starts_with("wiloprem_")
             || file_name.starts_with("ctdozlite_")
         {
             format!(
@@ -8096,9 +8097,14 @@ pub fn parse_board_topics(resp: &Value) -> Vec<BoardTopic> {
 }
 
 fn board_trace(label: &str, detail: &str) {
-    // Opt-in diagnostics: `CTDOZLITE_BOARD_TRACE=1` appends the board calls to `board_trace.log`
-    // (gitignored). Off by default: payloads carry conversation content.
-    if std::env::var("CTDOZLITE_BOARD_TRACE").ok().as_deref() != Some("1") {
+    // Opt-in diagnostics: `WILOPREM_BOARD_TRACE=1` (or legacy `CTDOZLITE_BOARD_TRACE=1`) appends
+    // the board calls to `board_trace.log` (gitignored). Off by default: payloads carry conversation content.
+    if std::env::var("WILOPREM_BOARD_TRACE")
+        .or_else(|_| std::env::var("CTDOZLITE_BOARD_TRACE"))
+        .ok()
+        .as_deref()
+        != Some("1")
+    {
         return;
     }
     use std::io::Write;

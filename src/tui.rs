@@ -2647,7 +2647,7 @@ fn render_splash(f: &mut Frame, area: Rect, app: &TuiApp) {
     let para = Paragraph::new(rows)
         .block(
             Block::default()
-                .title(format!(" {} ctdozlite ", spinner_frame()))
+                .title(format!(" {} Wiloprem ", spinner_frame()))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(theme::ACCENT)),
@@ -2716,7 +2716,7 @@ fn ui_draw(f: &mut Frame, app: &mut TuiApp<'_>) {
     let total_unread: usize = app.unread.values().sum();
     let mut header_spans = vec![
         Span::styled(
-            " ctdozlite ",
+            " Wiloprem ",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),

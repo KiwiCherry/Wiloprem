@@ -655,7 +655,7 @@ impl ZaloGuiApp {
             if elapsed_ms >= POPUP_DURATION_MS || !self.settings.enable_notifications {
                 close_popup = true;
             } else {
-                const POPUP_TITLE: &str = "ctdozlite — Tin nhắn mới";
+                const POPUP_TITLE: &str = "Wiloprem — Tin nhắn mới";
                 ctx.request_repaint_after(Duration::from_millis(40));
                 let popup_w = 376.0_f32;
                 let popup_h = 148.0_f32;
@@ -739,7 +739,7 @@ impl ZaloGuiApp {
                                     ui.painter().circle_filled(dr.center(), 4.0, pal.primary);
                                 }
                                 ui.label(
-                                    RichText::new("ctdozlite · Tin nhắn mới")
+                                    RichText::new("Wiloprem · Tin nhắn mới")
                                         .size(11.5)
                                         .color(pal.primary)
                                         .strong(),
@@ -3754,7 +3754,7 @@ impl ZaloGuiApp {
                                                         ui.vertical(|ui| {
                                                             ui.horizontal(|ui| {
                                                                 ui.label(
-                                                                    RichText::new("ctdozlite")
+                                                                    RichText::new("Wiloprem")
                                                                         .size(15.0)
                                                                         .color(pal.text_primary)
                                                                         .strong(),
@@ -4830,7 +4830,7 @@ impl ZaloGuiApp {
                                 ui.add(
                                     egui::Label::new(
                                         RichText::new(
-                                            "⚠ Lưu ý: Hiện tại ứng dụng không sử dụng máy chủ trung gian, nên chức năng hẹn giờ gửi tin nhắn chỉ khả dụng khi đang chạy ctdozlite.",
+                                            "⚠ Lưu ý: Hiện tại ứng dụng không sử dụng máy chủ trung gian, nên chức năng hẹn giờ gửi tin nhắn chỉ khả dụng khi đang chạy Wiloprem.",
                                         )
                                         .size(12.5)
                                         .color(warn_fg)

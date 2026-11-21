@@ -108,7 +108,7 @@ impl ThemePalette {
             })
         };
         let doc = serde_json::json!({
-            "_comment": "ctdozlite custom theme file (#7). Edit hex colors (#RRGGBB) under dark/light and reload in Settings.",
+            "_comment": "Wiloprem custom theme file (#7). Edit hex colors (#RRGGBB) under dark/light and reload in Settings.",
             "dark": to_map(&d),
             "light": to_map(&l),
         });
