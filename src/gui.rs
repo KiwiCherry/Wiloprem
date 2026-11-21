@@ -1133,6 +1133,28 @@ fn settings_default_true() -> bool {
     true
 }
 
+fn settings_default_wallpaper_dim() -> f32 {
+    0.65
+}
+
+fn settings_default_wallpaper_panel_opacity() -> f32 {
+    0.85
+}
+
+/// Per-conversation custom background wallpaper override.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ChatWallpaperOverride {
+    pub image_file: String,
+    pub dim_opacity: f32,
+}
+
+/// Decoded and downscaled (max 2560px) GPU texture for a background wallpaper image.
+pub(crate) struct CachedWallpaperTexture {
+    pub texture: egui::TextureHandle,
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Rule lọc của 1 Chat Folder (WaveA3, Telegram-style).
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -1212,6 +1234,16 @@ struct AppSettings {
     // 3. Giao diện
     pub(crate) theme_mode: String, // "light" | "dark" | "system"
     pub(crate) use_avatar_as_wallpaper: bool,
+    #[serde(default)]
+    pub(crate) wallpaper_image_file: Option<String>,
+    #[serde(default = "settings_default_wallpaper_dim")]
+    pub(crate) wallpaper_dim_opacity: f32,
+    #[serde(default)]
+    pub(crate) wallpaper_fit_mode: WallpaperFitMode,
+    #[serde(default = "settings_default_wallpaper_panel_opacity")]
+    pub(crate) wallpaper_panel_opacity: f32,
+    #[serde(default)]
+    pub(crate) chat_wallpapers: HashMap<String, ChatWallpaperOverride>,
     pub(crate) font_family: String,
     pub(crate) font_scale: f32,
     #[serde(default = "settings_default_true")]
@@ -1310,6 +1342,11 @@ impl Default for AppSettings {
             friend_src_card: true,
             theme_mode: "dark".into(),
             use_avatar_as_wallpaper: false,
+            wallpaper_image_file: None,
+            wallpaper_dim_opacity: 0.65,
+            wallpaper_fit_mode: WallpaperFitMode::Cover,
+            wallpaper_panel_opacity: 0.85,
+            chat_wallpapers: HashMap::new(),
             font_family: "default".into(),
             font_scale: 1.0,
             animations_enabled: true,
@@ -1712,6 +1749,8 @@ pub struct ZaloGuiApp {
     pub(crate) alias_modal_input: String,
     /// Auto-focus flag when the Contact Alias modal opens.
     pub(crate) alias_modal_focus_pending: bool,
+    /// In-memory GPU texture cache for global and per-conversation wallpapers (keyed by `image_file`).
+    pub(crate) wallpaper_textures: HashMap<String, CachedWallpaperTexture>,
     last_typing_sent_at: Option<(String, std::time::Instant)>,
     last_synced_icon_unread: Option<usize>,
     // Background channels
@@ -2066,6 +2105,7 @@ impl ZaloGuiApp {
             alias_modal_target: None,
             alias_modal_input: String::new(),
             alias_modal_focus_pending: false,
+            wallpaper_textures: HashMap::new(),
             last_typing_sent_at: None,
             last_synced_icon_unread: None,
             event_rx: rx,
@@ -2091,6 +2131,7 @@ impl ZaloGuiApp {
         };
         let mut app = app;
         let _ = app.reload_custom_sticker_packs();
+        app.sync_wallpapers_from_sqlite_and_preload(&cc.egui_ctx);
 
         // Clean up any leftover `.old` executable from a previous in-place self-update
         if let Ok(exe_path) = std::env::current_exe() {
@@ -2157,6 +2198,236 @@ impl ZaloGuiApp {
     /// if present and non-empty, otherwise falling back to `fallback_name`.
     pub(crate) fn effective_name<'a>(&'a self, user_id: &str, fallback_name: &'a str) -> &'a str {
         self.contact_alias(user_id).unwrap_or(fallback_name)
+    }
+
+    /// Returns the persistent `%LOCALAPPDATA%\Wiloprem\wallpapers` directory (creating it if needed),
+    /// falling back to `./wallpapers` on non-Windows or if `LOCALAPPDATA` is unset.
+    pub(crate) fn wallpapers_storage_dir() -> std::path::PathBuf {
+        let dir = std::env::var_os("LOCALAPPDATA")
+            .map(std::path::PathBuf::from)
+            .map(|base| base.join("Wiloprem").join("wallpapers"))
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .map(std::path::PathBuf::from)
+                    .map(|h| {
+                        if cfg!(target_os = "macos") {
+                            h.join("Library/Application Support/Wiloprem/wallpapers")
+                        } else {
+                            h.join(".local/share/Wiloprem/wallpapers")
+                        }
+                    })
+            })
+            .unwrap_or_else(|| std::path::PathBuf::from("wallpapers"));
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    }
+
+    /// Resolves a stored wallpaper `image_file` name or path to an existing file on disk.
+    pub(crate) fn resolve_wallpaper_path(image_file: &str) -> Option<std::path::PathBuf> {
+        let trimmed = image_file.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let direct = std::path::PathBuf::from(trimmed);
+        if direct.is_file() {
+            return Some(direct);
+        }
+        let in_app_dir = Self::wallpapers_storage_dir().join(trimmed);
+        if in_app_dir.is_file() {
+            return Some(in_app_dir);
+        }
+        let in_local = std::path::Path::new("wallpapers").join(trimmed);
+        if in_local.is_file() {
+            return Some(in_local);
+        }
+        None
+    }
+
+    /// Copies a user-picked wallpaper image (`.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.gif`)
+    /// into `%LOCALAPPDATA%\Wiloprem\wallpapers\` with a unique filename so moving or deleting
+    /// the original file never breaks the chat background.
+    pub(crate) fn import_and_copy_wallpaper_file(
+        src_path: &std::path::Path,
+        scope_tag: &str,
+    ) -> Result<String, String> {
+        if !src_path.is_file() {
+            return Err("Tệp hình ảnh không tồn tại".into());
+        }
+        let ext = src_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .unwrap_or_default();
+        if !matches!(
+            ext.as_str(),
+            "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif"
+        ) {
+            return Err("Chỉ hỗ trợ định dạng ảnh .png, .jpg, .jpeg, .webp".into());
+        }
+        let safe_scope: String = scope_tag
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .take(20)
+            .collect();
+        let scope_prefix = if safe_scope.is_empty() {
+            "global"
+        } else {
+            &safe_scope
+        };
+        let ts = crate::login::unix_now();
+        let hash_short = &crate::crypto::md5_hex(&format!("{}_{ts}", src_path.display()))[..8];
+        let file_name = format!("wp_{scope_prefix}_{ts}_{hash_short}.{ext}");
+        let dst_dir = Self::wallpapers_storage_dir();
+        let dst_path = dst_dir.join(&file_name);
+        std::fs::copy(src_path, &dst_path)
+            .map_err(|e| format!("Không thể sao chép ảnh vào thư mục dữ liệu: {e}"))?;
+        Ok(file_name)
+    }
+
+    /// Decodes an image file once, downscales oversized images so the longest dimension is at most
+    /// `2560px` to keep VRAM usage low, and caches the resulting `egui::TextureHandle` in RAM.
+    pub(crate) fn load_and_cache_wallpaper_texture(
+        &mut self,
+        ctx: &egui::Context,
+        image_file: &str,
+    ) -> bool {
+        let key = image_file.trim();
+        if key.is_empty() {
+            return false;
+        }
+        if self.wallpaper_textures.contains_key(key) {
+            return true;
+        }
+        let Some(path) = Self::resolve_wallpaper_path(key) else {
+            return false;
+        };
+        let Ok(img) = image::open(&path) else {
+            return false;
+        };
+        let rgba = img.to_rgba8();
+        let (w, h) = rgba.dimensions();
+        if w == 0 || h == 0 {
+            return false;
+        }
+        const MAX_WALLPAPER_DIM: u32 = 2560;
+        let (final_rgba, fw, fh) = if w > MAX_WALLPAPER_DIM || h > MAX_WALLPAPER_DIM {
+            let scale = (MAX_WALLPAPER_DIM as f32 / w.max(h) as f32).clamp(0.05, 1.0);
+            let nw = ((w as f32 * scale).round() as u32).max(1);
+            let nh = ((h as f32 * scale).round() as u32).max(1);
+            let resized = image::imageops::resize(
+                &rgba,
+                nw,
+                nh,
+                image::imageops::FilterType::Triangle,
+            );
+            (resized, nw, nh)
+        } else {
+            (rgba, w, h)
+        };
+        let color_img = egui::ColorImage::from_rgba_unmultiplied(
+            [fw as usize, fh as usize],
+            final_rgba.as_raw(),
+        );
+        let tex = ctx.load_texture(
+            format!("wallpaper_tex_{key}"),
+            color_img,
+            TextureOptions::LINEAR,
+        );
+        self.wallpaper_textures.insert(
+            key.to_string(),
+            CachedWallpaperTexture {
+                texture: tex,
+                width: fw,
+                height: fh,
+            },
+        );
+        true
+    }
+
+    /// Synchronizes global and per-conversation wallpaper settings from SQLite `wallpaper_settings`
+    /// and preloads all referenced textures into `self.wallpaper_textures` once on startup.
+    pub(crate) fn sync_wallpapers_from_sqlite_and_preload(&mut self, ctx: &egui::Context) {
+        let mut rows = Vec::new();
+        if let Ok(st) = crate::store::MessageStore::open("zalo_history.db") {
+            if let Ok(r) = st.load_wallpaper_settings() {
+                rows.extend(r);
+            }
+        }
+        let db = crate::store::db_path_for_account(&self.user_uin);
+        if db != "zalo_history.db" {
+            if let Ok(st) = crate::store::MessageStore::open(&db) {
+                if let Ok(r) = st.load_wallpaper_settings() {
+                    rows.extend(r);
+                }
+            }
+        }
+        for (chat_id, image_file, dim_opacity, fit_mode, panel_opacity) in rows {
+            if chat_id == "__global__" {
+                if !image_file.trim().is_empty() {
+                    self.settings.wallpaper_image_file = Some(image_file.trim().to_string());
+                }
+                self.settings.wallpaper_dim_opacity = dim_opacity.clamp(0.0, 0.95);
+                self.settings.wallpaper_fit_mode = WallpaperFitMode::from_str_lossy(&fit_mode);
+                self.settings.wallpaper_panel_opacity = panel_opacity.clamp(0.40, 1.0);
+            } else if !image_file.trim().is_empty() {
+                self.settings.chat_wallpapers.insert(
+                    chat_id,
+                    ChatWallpaperOverride {
+                        image_file: image_file.trim().to_string(),
+                        dim_opacity: dim_opacity.clamp(0.0, 0.95),
+                    },
+                );
+            }
+        }
+        let mut to_load: Vec<String> = Vec::new();
+        if let Some(ref g_file) = self.settings.wallpaper_image_file {
+            if !g_file.trim().is_empty() {
+                to_load.push(g_file.trim().to_string());
+            }
+        }
+        for ov in self.settings.chat_wallpapers.values() {
+            if !ov.image_file.trim().is_empty() {
+                to_load.push(ov.image_file.trim().to_string());
+            }
+        }
+        for file_key in to_load {
+            self.load_and_cache_wallpaper_texture(ctx, &file_key);
+        }
+    }
+
+    /// Persists a global (`__global__`) or per-conversation wallpaper setting to SQLite.
+    pub(crate) fn persist_wallpaper_to_sqlite(
+        &self,
+        chat_id: &str,
+        image_file: Option<&str>,
+        dim_opacity: f32,
+    ) {
+        let now_sec = crate::login::unix_now() as i64;
+        let fit_str = self.settings.wallpaper_fit_mode.as_str();
+        let panel_op = self.settings.wallpaper_panel_opacity.clamp(0.40, 1.0);
+        let db = crate::store::db_path_for_account(&self.user_uin);
+        for target_db in ["zalo_history.db", db.as_str()] {
+            if let Ok(mut st) = crate::store::MessageStore::open(target_db) {
+                match image_file {
+                    Some(img) if !img.trim().is_empty() || chat_id == "__global__" => {
+                        let _ = st.upsert_wallpaper_setting(
+                            chat_id,
+                            img,
+                            dim_opacity,
+                            fit_str,
+                            panel_op,
+                            now_sec,
+                        );
+                    }
+                    _ => {
+                        let _ = st.delete_wallpaper_setting(chat_id);
+                    }
+                }
+            }
+            if db == "zalo_history.db" {
+                break;
+            }
+        }
     }
 }
 

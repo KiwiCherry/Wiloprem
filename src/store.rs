@@ -276,6 +276,8 @@ impl MessageStore {
         Self::ensure_script_schema(&conn)?;
         // Local-only contact aliases / custom nicknames (Tên gợi nhớ).
         Self::ensure_contact_aliases_schema(&conn)?;
+        // Customizable global and per-conversation wallpaper settings (Tùy chỉnh hình nền).
+        Self::ensure_wallpaper_schema(&conn)?;
         let user_ver = conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?;
         if user_ver < 1 {
             conn.execute_batch(
@@ -923,6 +925,94 @@ impl MessageStore {
         self.conn.execute(
             "DELETE FROM contact_aliases WHERE user_id = ?1",
             params![uid],
+        )?;
+        Ok(())
+    }
+
+    /// Ensures the `wallpaper_settings` table exists for global (`chat_id = '__global__'`)
+    /// and per-conversation wallpaper overrides.
+    fn ensure_wallpaper_schema(conn: &Connection) -> Result<()> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS wallpaper_settings (
+                chat_id TEXT PRIMARY KEY,
+                image_file TEXT NOT NULL DEFAULT '',
+                dim_opacity REAL NOT NULL DEFAULT 0.65,
+                fit_mode TEXT NOT NULL DEFAULT 'cover',
+                panel_opacity REAL NOT NULL DEFAULT 0.85,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            );",
+        )?;
+        Ok(())
+    }
+
+    /// Loads all persisted wallpaper rows (global `__global__` and per-conversation overrides).
+    pub fn load_wallpaper_settings(&self) -> Result<Vec<(String, String, f32, String, f32)>> {
+        Self::ensure_wallpaper_schema(&self.conn)?;
+        let mut stmt = self.conn.prepare(
+            "SELECT chat_id, image_file, dim_opacity, fit_mode, panel_opacity FROM wallpaper_settings",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, f64>(2).unwrap_or(0.65) as f32,
+                row.get::<_, String>(3).unwrap_or_else(|_| "cover".into()),
+                row.get::<_, f64>(4).unwrap_or(0.85) as f32,
+            ))
+        })?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    /// Upserts a global (`chat_id = "__global__"`) or per-conversation wallpaper setting.
+    pub fn upsert_wallpaper_setting(
+        &mut self,
+        chat_id: &str,
+        image_file: &str,
+        dim_opacity: f32,
+        fit_mode: &str,
+        panel_opacity: f32,
+        updated_at: i64,
+    ) -> Result<()> {
+        let cid = chat_id.trim();
+        if cid.is_empty() {
+            return Ok(());
+        }
+        Self::ensure_wallpaper_schema(&self.conn)?;
+        self.conn.execute(
+            "INSERT INTO wallpaper_settings (chat_id, image_file, dim_opacity, fit_mode, panel_opacity, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(chat_id) DO UPDATE SET
+                 image_file = excluded.image_file,
+                 dim_opacity = excluded.dim_opacity,
+                 fit_mode = excluded.fit_mode,
+                 panel_opacity = excluded.panel_opacity,
+                 updated_at = excluded.updated_at",
+            params![
+                cid,
+                image_file.trim(),
+                dim_opacity.clamp(0.0, 0.95) as f64,
+                fit_mode.trim(),
+                panel_opacity.clamp(0.40, 1.0) as f64,
+                updated_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Deletes a wallpaper setting row for `chat_id`.
+    pub fn delete_wallpaper_setting(&mut self, chat_id: &str) -> Result<()> {
+        let cid = chat_id.trim();
+        if cid.is_empty() {
+            return Ok(());
+        }
+        Self::ensure_wallpaper_schema(&self.conn)?;
+        self.conn.execute(
+            "DELETE FROM wallpaper_settings WHERE chat_id = ?1",
+            params![cid],
         )?;
         Ok(())
     }
@@ -4555,5 +4645,43 @@ mod tests {
         // Explicit delete
         st.delete_contact_alias("10002").unwrap();
         assert!(st.load_contact_aliases().unwrap().is_empty());
+    }
+
+    #[test]
+    fn wallpaper_settings_crud_and_idempotent_migration() {
+        let mut st = MessageStore::open(":memory:").unwrap();
+        assert!(st.load_wallpaper_settings().unwrap().is_empty());
+
+        st.upsert_wallpaper_setting(
+            "__global__",
+            "wp_global_1700000000_abcd1234.png",
+            0.70,
+            "cover",
+            0.88,
+            1_700_000_000,
+        )
+        .unwrap();
+        st.upsert_wallpaper_setting(
+            "thread_99",
+            "wp_thread_99_1700000010_ef567890.webp",
+            0.55,
+            "contain",
+            0.85,
+            1_700_000_010,
+        )
+        .unwrap();
+
+        let rows = st.load_wallpaper_settings().unwrap();
+        assert_eq!(rows.len(), 2);
+        let global = rows.iter().find(|r| r.0 == "__global__").unwrap();
+        assert_eq!(global.1, "wp_global_1700000000_abcd1234.png");
+        assert!((global.2 - 0.70).abs() < 1e-4);
+        assert_eq!(global.3, "cover");
+        assert!((global.4 - 0.88).abs() < 1e-4);
+
+        st.delete_wallpaper_setting("thread_99").unwrap();
+        let rows = st.load_wallpaper_settings().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "__global__");
     }
 }

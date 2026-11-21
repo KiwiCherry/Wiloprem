@@ -3074,21 +3074,289 @@ impl ZaloGuiApp {
                                                 });
                                             ui.add_space(14.0);
 
-                                            ui.label(RichText::new("Hình nền chat").color(pal.text_primary).size(13.5).strong());
+                                            ui.label(
+                                                RichText::new("Tùy chỉnh hình nền (Wallpaper)")
+                                                    .color(pal.text_primary)
+                                                    .size(13.5)
+                                                    .strong(),
+                                            );
                                             ui.add_space(6.0);
+                                            let mut wp_actions: Vec<UiAction> = Vec::new();
                                             egui::Frame::none()
                                                 .fill(pal.bg_elevated)
                                                 .stroke(Stroke::new(1.0_f32, pal.border))
                                                 .rounding(Rounding::same(8.0))
                                                 .inner_margin(Margin::symmetric(14.0, 12.0))
                                                 .show(ui, |ui| {
+                                                    ui.spacing_mut().item_spacing.y = 8.0;
+                                                    let cur_wp_file =
+                                                        self.settings.wallpaper_image_file.clone();
+                                                    let cur_dim =
+                                                        self.settings.wallpaper_dim_opacity;
+                                                    let cur_panel =
+                                                        self.settings.wallpaper_panel_opacity;
+                                                    let cur_fit = self.settings.wallpaper_fit_mode;
+
+                                                    // 1) Action Toolbar: Pick Image + Reset + Status Label
                                                     ui.horizontal(|ui| {
-                                                        ui.label(RichText::new("Dùng ảnh đại diện làm hình nền trò chuyện").color(pal.text_primary).size(13.2));
-                                                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                                            render_toggle_switch(ui, &mut self.settings.use_avatar_as_wallpaper, pal);
-                                                        });
+                                                        if crate::gui::design_system::widgets::button(
+                                                            ui,
+                                                            pal,
+                                                            crate::gui::design_system::widgets::ButtonKind::Primary,
+                                                            &format!("{} Chọn ảnh hình nền…", lucide::IMAGE),
+                                                            true,
+                                                        )
+                                                        .on_hover_text("Chọn ảnh .png, .jpg, .jpeg, .webp từ máy tính")
+                                                        .clicked()
+                                                        {
+                                                            wp_actions.push(UiAction::PickWallpaper {
+                                                                chat_id: None,
+                                                            });
+                                                        }
+                                                        if cur_wp_file.is_some()
+                                                            && crate::gui::design_system::widgets::button(
+                                                                ui,
+                                                                pal,
+                                                                crate::gui::design_system::widgets::ButtonKind::Secondary,
+                                                                &format!("{} Xoá hình nền", lucide::TRASH_2),
+                                                                true,
+                                                            )
+                                                            .on_hover_text("Xoá hình nền tùy chỉnh và khôi phục nền mặc định")
+                                                            .clicked()
+                                                        {
+                                                            wp_actions.push(UiAction::ClearWallpaper {
+                                                                chat_id: None,
+                                                            });
+                                                        }
+                                                    });
+
+                                                    if let Some(ref fname) = cur_wp_file {
+                                                        ui.label(
+                                                            TextRole::Caption.rich(
+                                                                format!(
+                                                                    "Đang áp dụng: {fname} (lưu tại %LOCALAPPDATA%\\Wiloprem\\wallpapers)"
+                                                                ),
+                                                                pal.text_muted,
+                                                            ),
+                                                        );
+                                                    } else {
+                                                        ui.label(
+                                                            TextRole::Caption.rich(
+                                                                "Chưa chọn hình nền tùy chỉnh — đang dùng nền mặc định của chủ đề.",
+                                                                pal.text_muted,
+                                                            ),
+                                                        );
+                                                    }
+
+                                                    // 2) Live Preview Thumbnail (aspect-correct + dim overlay + mini chat bubbles)
+                                                    let preview_w = ui.available_width().min(360.0).max(200.0);
+                                                    let preview_h = 118.0_f32;
+                                                    let (prev_rect, _) = ui.allocate_exact_size(
+                                                        Vec2::new(preview_w, preview_h),
+                                                        Sense::hover(),
+                                                    );
+                                                    ui.painter().rect_filled(
+                                                        prev_rect,
+                                                        Rounding::same(8.0),
+                                                        pal.bg_chat_canvas,
+                                                    );
+                                                    if let Some(tex_entry) = cur_wp_file
+                                                        .as_deref()
+                                                        .and_then(|k| self.wallpaper_textures.get(k.trim()))
+                                                    {
+                                                        let clipped = ui.painter().with_clip_rect(prev_rect);
+                                                        crate::gui::workspace::paint_wallpaper_background(
+                                                            &clipped,
+                                                            prev_rect,
+                                                            tex_entry.texture.id(),
+                                                            tex_entry.width,
+                                                            tex_entry.height,
+                                                            cur_fit,
+                                                            pal,
+                                                            cur_dim,
+                                                            Rounding::same(8.0),
+                                                        );
+                                                    }
+                                                    // Mini header & sample bubbles inside preview
+                                                    let hdr_alpha = (cur_panel.clamp(0.40, 1.0) * 255.0).round() as u8;
+                                                    let hdr_col = Color32::from_rgba_unmultiplied(
+                                                        pal.bg_sidebar.r(),
+                                                        pal.bg_sidebar.g(),
+                                                        pal.bg_sidebar.b(),
+                                                        hdr_alpha,
+                                                    );
+                                                    let mini_hdr = Rect::from_min_max(
+                                                        prev_rect.min,
+                                                        Pos2::new(prev_rect.right(), prev_rect.top() + 24.0),
+                                                    );
+                                                    ui.painter().rect_filled(
+                                                        mini_hdr,
+                                                        Rounding {
+                                                            nw: 8.0,
+                                                            ne: 8.0,
+                                                            sw: 0.0,
+                                                            se: 0.0,
+                                                        },
+                                                        hdr_col,
+                                                    );
+                                                    ui.painter().text(
+                                                        Pos2::new(mini_hdr.left() + 10.0, mini_hdr.center().y),
+                                                        egui::Align2::LEFT_CENTER,
+                                                        "Xem trước khung trò chuyện Wiloprem",
+                                                        FontId::proportional(11.0),
+                                                        pal.text_primary,
+                                                    );
+                                                    let in_bub = Rect::from_min_size(
+                                                        Pos2::new(prev_rect.left() + 12.0, prev_rect.top() + 34.0),
+                                                        Vec2::new(156.0, 28.0),
+                                                    );
+                                                    ui.painter().rect_filled(in_bub, Rounding::same(7.0), pal.bubble_in_bg);
+                                                    ui.painter().text(
+                                                        Pos2::new(in_bub.left() + 9.0, in_bub.center().y),
+                                                        egui::Align2::LEFT_CENTER,
+                                                        "Hình nền mới sắc nét quá!",
+                                                        FontId::proportional(11.2),
+                                                        pal.text_primary,
+                                                    );
+                                                    let out_bub = Rect::from_min_size(
+                                                        Pos2::new(prev_rect.right() - 168.0, prev_rect.top() + 70.0),
+                                                        Vec2::new(156.0, 28.0),
+                                                    );
+                                                    ui.painter().rect_filled(out_bub, Rounding::same(7.0), pal.bubble_out_bg);
+                                                    ui.painter().text(
+                                                        Pos2::new(out_bub.left() + 9.0, out_bub.center().y),
+                                                        egui::Align2::LEFT_CENTER,
+                                                        "Chữ luôn rõ ràng, dễ đọc ✓",
+                                                        FontId::proportional(11.2),
+                                                        pal.text_primary,
+                                                    );
+                                                    ui.painter().rect_stroke(
+                                                        prev_rect,
+                                                        Rounding::same(8.0),
+                                                        Stroke::new(1.0_f32, pal.border),
+                                                    );
+
+                                                    // 3) Fit Mode Selector (Cover / Contain / Stretch)
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(
+                                                            RichText::new("Chế độ co giãn:")
+                                                                .color(pal.text_primary)
+                                                                .size(12.6),
+                                                        );
+                                                        for mode in [
+                                                            WallpaperFitMode::Cover,
+                                                            WallpaperFitMode::Contain,
+                                                            WallpaperFitMode::Stretch,
+                                                        ] {
+                                                            let is_sel = cur_fit == mode;
+                                                            if ui
+                                                                .selectable_label(is_sel, mode.label_vi())
+                                                                .clicked()
+                                                            {
+                                                                wp_actions.push(
+                                                                    UiAction::UpdateWallpaperStyle {
+                                                                        dim_opacity: cur_dim,
+                                                                        panel_opacity: cur_panel,
+                                                                        fit_mode: mode,
+                                                                    },
+                                                                );
+                                                            }
+                                                        }
+                                                    });
+
+                                                    // 4) Độ tối lớp phủ (Dim Opacity) Slider
+                                                    let mut dim_pct = (cur_dim * 100.0).round();
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(
+                                                            RichText::new("Độ tối lớp phủ (Dim Opacity):")
+                                                                .color(pal.text_primary)
+                                                                .size(12.6),
+                                                        );
+                                                        ui.with_layout(
+                                                            Layout::right_to_left(Align::Center),
+                                                            |ui| {
+                                                                let slider = egui::Slider::new(
+                                                                    &mut dim_pct,
+                                                                    0.0_f32..=95.0_f32,
+                                                                )
+                                                                .step_by(1.0)
+                                                                .suffix("%");
+                                                                if ui.add(slider).changed() {
+                                                                    wp_actions.push(
+                                                                        UiAction::UpdateWallpaperStyle {
+                                                                            dim_opacity: (dim_pct / 100.0)
+                                                                                .clamp(0.0, 0.95),
+                                                                            panel_opacity: cur_panel,
+                                                                            fit_mode: cur_fit,
+                                                                        },
+                                                                    );
+                                                                }
+                                                            },
+                                                        );
+                                                    });
+
+                                                    // 5) Độ trong suốt khung chat (Panel Opacity) Slider
+                                                    let mut panel_pct = (cur_panel * 100.0).round();
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(
+                                                            RichText::new(
+                                                                "Độ trong suốt khung chat (Panel Opacity):",
+                                                            )
+                                                            .color(pal.text_primary)
+                                                            .size(12.6),
+                                                        );
+                                                        ui.with_layout(
+                                                            Layout::right_to_left(Align::Center),
+                                                            |ui| {
+                                                                let slider = egui::Slider::new(
+                                                                    &mut panel_pct,
+                                                                    40.0_f32..=100.0_f32,
+                                                                )
+                                                                .step_by(1.0)
+                                                                .suffix("%");
+                                                                if ui.add(slider).changed() {
+                                                                    wp_actions.push(
+                                                                        UiAction::UpdateWallpaperStyle {
+                                                                            dim_opacity: cur_dim,
+                                                                            panel_opacity: (panel_pct
+                                                                                / 100.0)
+                                                                                .clamp(0.40, 1.0),
+                                                                            fit_mode: cur_fit,
+                                                                        },
+                                                                    );
+                                                                }
+                                                            },
+                                                        );
+                                                    });
+
+                                                    ui.separator();
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(
+                                                            RichText::new(
+                                                                "Dùng ảnh đại diện liên hệ làm hình nền khi chưa đặt ảnh riêng",
+                                                            )
+                                                            .color(pal.text_primary)
+                                                            .size(12.6),
+                                                        );
+                                                        ui.with_layout(
+                                                            Layout::right_to_left(Align::Center),
+                                                            |ui| {
+                                                                if render_toggle_switch(
+                                                                    ui,
+                                                                    &mut self.settings.use_avatar_as_wallpaper,
+                                                                    pal,
+                                                                )
+                                                                .changed()
+                                                                {
+                                                                    self.settings.save();
+                                                                }
+                                                            },
+                                                        );
                                                     });
                                                 });
+                                            if !wp_actions.is_empty() {
+                                                self.apply_ui_actions(&mut wp_actions, ui.ctx());
+                                            }
                                             ui.add_space(14.0);
                                             ui.label(RichText::new("Chủ đề & Bộ nhãn dán tùy chỉnh").color(pal.text_primary).size(13.5).strong());
                                             ui.add_space(6.0);

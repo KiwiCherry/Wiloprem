@@ -5,6 +5,45 @@
 
 use crate::gui::stickers::ThreadFilter;
 
+/// Aspect-ratio scaling mode for customizable chat background wallpapers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum WallpaperFitMode {
+    /// Fill the entire chat viewport without distortion by cropping excess UV edges.
+    #[default]
+    Cover,
+    /// Fit the entire image inside the chat viewport while preserving aspect ratio.
+    Contain,
+    /// Stretch the image to match the exact chat viewport dimensions.
+    Stretch,
+}
+
+impl WallpaperFitMode {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Cover => "cover",
+            Self::Contain => "contain",
+            Self::Stretch => "stretch",
+        }
+    }
+
+    pub(crate) fn from_str_lossy(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "contain" => Self::Contain,
+            "stretch" => Self::Stretch,
+            _ => Self::Cover,
+        }
+    }
+
+    pub(crate) fn label_vi(self) -> &'static str {
+        match self {
+            Self::Cover => "Phủ kín (Cover)",
+            Self::Contain => "Vừa khung (Contain)",
+            Self::Stretch => "Kéo giãn (Stretch)",
+        }
+    }
+}
+
 /// Lightweight UI intent emitted by the App Shell, Navigation Rail, Sidebar, Header, or Modals.
 #[derive(Debug, Clone)]
 pub(crate) enum UiAction {
@@ -71,5 +110,24 @@ pub(crate) enum UiAction {
     /// Clear a local-only contact alias (`Tên gợi nhớ`), reverting to the original Zalo display name.
     ClearContactAlias {
         user_id: String,
+    },
+    /// Open native image picker to set global wallpaper (`chat_id: None`) or per-chat override (`chat_id: Some(id)`).
+    PickWallpaper {
+        chat_id: Option<String>,
+    },
+    /// Update global wallpaper rendering style (`dim_opacity`, `panel_opacity`, `fit_mode`).
+    UpdateWallpaperStyle {
+        dim_opacity: f32,
+        panel_opacity: f32,
+        fit_mode: WallpaperFitMode,
+    },
+    /// Update per-conversation wallpaper dim overlay opacity (`0.0..=0.95`).
+    UpdateChatWallpaperDim {
+        chat_id: String,
+        dim_opacity: f32,
+    },
+    /// Clear the custom wallpaper for a specific conversation (`Some(id)`) or globally (`None`).
+    ClearWallpaper {
+        chat_id: Option<String>,
     },
 }

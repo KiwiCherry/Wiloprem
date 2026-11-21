@@ -302,6 +302,11 @@ pub fn pick_single_file() -> Option<PathBuf> {
     pick_native_files(false, false).into_iter().next()
 }
 
+/// Single-image native dialog for wallpaper selection (`.png`, `.jpg`, `.jpeg`, `.webp`). Blocking.
+pub fn pick_single_image() -> Option<PathBuf> {
+    pick_native_files(true, false).into_iter().next()
+}
+
 /// Copied files on the clipboard (Explorer / Finder / file managers), in clipboard order.
 pub fn read_clipboard_file_list() -> Vec<PathBuf> {
     #[cfg(target_os = "windows")]

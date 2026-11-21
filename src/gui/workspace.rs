@@ -27,6 +27,85 @@ pub(crate) fn compute_chat_header_actions_width(is_group: bool, is_narrow_w: boo
     34.0 + 34.0 + 34.0 + vid_w + 8.0 + 34.0 + 26.0
 }
 
+/// Computes `(draw_rect, uv_rect)` for rendering a background wallpaper inside `target_rect`
+/// according to `fit_mode` (`Cover`, `Contain`, or `Stretch`) without stretching or distortion.
+pub(crate) fn compute_wallpaper_draw_geometry(
+    target_rect: Rect,
+    img_w: u32,
+    img_h: u32,
+    fit_mode: WallpaperFitMode,
+) -> (Rect, Rect) {
+    let full_uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+    let rw = target_rect.width().max(1.0);
+    let rh = target_rect.height().max(1.0);
+    if img_w == 0 || img_h == 0 {
+        return (target_rect, full_uv);
+    }
+    let rect_aspect = rw / rh;
+    let img_aspect = img_w as f32 / img_h as f32;
+
+    match fit_mode {
+        WallpaperFitMode::Stretch => (target_rect, full_uv),
+        WallpaperFitMode::Cover => {
+            if (rect_aspect - img_aspect).abs() <= 1e-4 {
+                (target_rect, full_uv)
+            } else if rect_aspect > img_aspect {
+                // Viewport is wider than image: full width (u = 0..1), crop top & bottom in v
+                let v_span = (img_aspect / rect_aspect).clamp(0.01, 1.0);
+                let v_min = (1.0 - v_span) * 0.5;
+                let uv = Rect::from_min_max(
+                    Pos2::new(0.0, v_min),
+                    Pos2::new(1.0, v_min + v_span),
+                );
+                (target_rect, uv)
+            } else {
+                // Viewport is taller than image: full height (v = 0..1), crop left & right in u
+                let u_span = (rect_aspect / img_aspect).clamp(0.01, 1.0);
+                let u_min = (1.0 - u_span) * 0.5;
+                let uv = Rect::from_min_max(
+                    Pos2::new(u_min, 0.0),
+                    Pos2::new(u_min + u_span, 1.0),
+                );
+                (target_rect, uv)
+            }
+        }
+        WallpaperFitMode::Contain => {
+            let (draw_w, draw_h) = if rect_aspect > img_aspect {
+                (rh * img_aspect, rh)
+            } else {
+                (rw, rw / img_aspect)
+            };
+            let draw_rect = Rect::from_center_size(target_rect.center(), Vec2::new(draw_w, draw_h));
+            (draw_rect, full_uv)
+        }
+    }
+}
+
+/// Paints a cached wallpaper texture inside `target_rect` with aspect-correct `fit_mode`
+/// followed immediately by a readability dim overlay (`pal.bg_chat_canvas` * `dim_opacity`).
+pub(crate) fn paint_wallpaper_background(
+    painter: &egui::Painter,
+    target_rect: Rect,
+    tex_id: egui::TextureId,
+    img_w: u32,
+    img_h: u32,
+    fit_mode: WallpaperFitMode,
+    pal: &ThemePalette,
+    dim_opacity: f32,
+    rounding: Rounding,
+) {
+    let (draw_rect, uv_rect) =
+        compute_wallpaper_draw_geometry(target_rect, img_w, img_h, fit_mode);
+    painter.image(tex_id, draw_rect, uv_rect, Color32::WHITE);
+    let clamped_dim = dim_opacity.clamp(0.0, 0.95);
+    if clamped_dim > 0.001 {
+        let alpha = (clamped_dim * 255.0).round().clamp(0.0, 255.0) as u8;
+        let bg = pal.bg_chat_canvas;
+        let overlay = Color32::from_rgba_unmultiplied(bg.r(), bg.g(), bg.b(), alpha);
+        painter.rect_filled(target_rect, rounding, overlay);
+    }
+}
+
 /// Replaces only the active `@mention` token at or before `cursor_char` while preserving trailing text.
 pub(crate) fn replace_active_mention_in_text(
     text: &str,
@@ -4241,6 +4320,94 @@ impl ZaloGuiApp {
                                                 },
                                             );
                                         });
+
+                                        ui.add_space(10.0);
+                                        ui.separator();
+                                        ui.add_space(8.0);
+
+                                        // Row 3: Đổi hình nền đoạn chat này (Per-conversation Wallpaper Override)
+                                        let chat_wp = self.settings.chat_wallpapers.get(d_id).cloned();
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                RichText::new(lucide::IMAGE)
+                                                    .size(13.5)
+                                                    .color(pal.primary_hover),
+                                            );
+                                            ui.add_space(8.0);
+                                            ui.vertical(|ui| {
+                                                ui.spacing_mut().item_spacing.y = 1.0;
+                                                ui.label(
+                                                    RichText::new("Hình nền đoạn chat này")
+                                                        .size(12.3)
+                                                        .color(pal.text_primary)
+                                                        .strong(),
+                                                );
+                                                ui.label(
+                                                    RichText::new(if chat_wp.is_some() {
+                                                        "Đang dùng hình nền riêng"
+                                                    } else if self.settings.wallpaper_image_file.is_some() {
+                                                        "Đang dùng hình nền chung"
+                                                    } else {
+                                                        "Mặc định theo chủ đề"
+                                                    })
+                                                    .size(11.0)
+                                                    .color(pal.text_muted),
+                                                );
+                                            });
+                                        });
+                                        ui.add_space(6.0);
+                                        ui.horizontal(|ui| {
+                                            if crate::gui::design_system::widgets::button(
+                                                ui,
+                                                pal,
+                                                crate::gui::design_system::widgets::ButtonKind::Secondary,
+                                                &format!("{} Đổi hình nền đoạn chat này", lucide::IMAGE),
+                                                true,
+                                            )
+                                            .clicked()
+                                            {
+                                                ui_actions.push(UiAction::PickWallpaper {
+                                                    chat_id: Some(d_id.clone()),
+                                                });
+                                            }
+                                            if chat_wp.is_some()
+                                                && crate::gui::design_system::widgets::button(
+                                                    ui,
+                                                    pal,
+                                                    crate::gui::design_system::widgets::ButtonKind::Ghost,
+                                                    lucide::TRASH_2,
+                                                    true,
+                                                )
+                                                .on_hover_text("Xoá hình nền riêng, khôi phục hình nền chung")
+                                                .clicked()
+                                            {
+                                                ui_actions.push(UiAction::ClearWallpaper {
+                                                    chat_id: Some(d_id.clone()),
+                                                });
+                                            }
+                                        });
+                                        if let Some(ov) = chat_wp {
+                                            ui.add_space(6.0);
+                                            let mut dim_pct = (ov.dim_opacity * 100.0).round();
+                                            ui.horizontal(|ui| {
+                                                ui.label(
+                                                    RichText::new("Độ tối nền:")
+                                                        .size(11.5)
+                                                        .color(pal.text_secondary),
+                                                );
+                                                let s_resp = ui.add(
+                                                    egui::Slider::new(&mut dim_pct, 0.0..=95.0)
+                                                        .step_by(1.0)
+                                                        .suffix("%"),
+                                                );
+                                                if s_resp.changed() {
+                                                    ui_actions.push(UiAction::UpdateChatWallpaperDim {
+                                                        chat_id: d_id.clone(),
+                                                        dim_opacity: (dim_pct / 100.0).clamp(0.0, 0.95),
+                                                    });
+                                                }
+                                            });
+                                        }
                                     }
                                 });
 
@@ -4626,6 +4793,80 @@ impl ZaloGuiApp {
                 if let Some((thread_id, thread_name, thread_avatar, is_group, _msg_count, thread_vanish)) =
                     thread_meta
                 {
+                    // Resolve active background wallpaper for this conversation:
+                    // 1) Per-conversation override (`self.settings.chat_wallpapers[&thread_id]`)
+                    // 2) Global custom wallpaper (`self.settings.wallpaper_image_file`)
+                    // 3) Optional contact avatar wallpaper (`self.settings.use_avatar_as_wallpaper`)
+                    let active_wp_info: Option<(egui::TextureId, u32, u32, f32)> = self
+                        .settings
+                        .chat_wallpapers
+                        .get(&thread_id)
+                        .and_then(|ov| {
+                            self.wallpaper_textures.get(ov.image_file.trim()).map(|t| {
+                                (t.texture.id(), t.width, t.height, ov.dim_opacity)
+                            })
+                        })
+                        .or_else(|| {
+                            self.settings
+                                .wallpaper_image_file
+                                .as_deref()
+                                .and_then(|gf| self.wallpaper_textures.get(gf.trim()))
+                                .map(|t| {
+                                    (
+                                        t.texture.id(),
+                                        t.width,
+                                        t.height,
+                                        self.settings.wallpaper_dim_opacity,
+                                    )
+                                })
+                        })
+                        .or_else(|| {
+                            if !self.settings.use_avatar_as_wallpaper {
+                                return None;
+                            }
+                            let av_url = thread_avatar.as_deref()?.trim();
+                            if av_url.is_empty() {
+                                return None;
+                            }
+                            let av_key = format!("avt_{}", crate::crypto::md5_hex(av_url));
+                            self.sticker_textures.get(&av_key).map(|tex| {
+                                let [w, h] = tex.size();
+                                (
+                                    tex.id(),
+                                    w as u32,
+                                    h as u32,
+                                    self.settings.wallpaper_dim_opacity.max(0.72),
+                                )
+                            })
+                        });
+
+                    if let Some((wp_tex_id, wp_w, wp_h, wp_dim)) = active_wp_info {
+                        paint_wallpaper_background(
+                            ui.painter(),
+                            central_rect,
+                            wp_tex_id,
+                            wp_w,
+                            wp_h,
+                            self.settings.wallpaper_fit_mode,
+                            pal,
+                            wp_dim,
+                            Rounding::ZERO,
+                        );
+                    }
+                    let header_and_composer_bg = if active_wp_info.is_some() {
+                        let a = (self.settings.wallpaper_panel_opacity.clamp(0.40, 1.0) * 255.0)
+                            .round()
+                            .clamp(100.0, 255.0) as u8;
+                        Color32::from_rgba_unmultiplied(
+                            pal.bg_sidebar.r(),
+                            pal.bg_sidebar.g(),
+                            pal.bg_sidebar.b(),
+                            a,
+                        )
+                    } else {
+                        pal.bg_sidebar
+                    };
+
                     let is_cloud_thread = thread_name.contains("Cloud của tôi");
                     let cur_friendship = if is_group || is_cloud_thread {
                         crate::chat::FriendshipStatus::Friend
@@ -4642,7 +4883,7 @@ impl ZaloGuiApp {
                         .to_string();
                     // 1. Clean Conversation Header Bar (No raw 19-digit ID, no bulky sync button)
                     egui::Frame::none()
-                        .fill(pal.bg_sidebar)
+                        .fill(header_and_composer_bg)
                         .inner_margin(Margin::symmetric(18.0, 11.0))
                         .stroke(Stroke::new(1.0_f32, pal.border))
                         .show(ui, |ui| {
@@ -7065,7 +7306,7 @@ impl ZaloGuiApp {
                     // 4. Bottom Message Composer Bar — Zalo PC 2-row style (Toolbar strip + Full-width Input & Send)
                     let comp_outer_w = ui.available_width();
                     let composer_frame = egui::Frame::none()
-                        .fill(pal.bg_sidebar)
+                        .fill(header_and_composer_bg)
                         .inner_margin(Margin::symmetric(14.0, 10.0))
                         .stroke(Stroke::new(1.0_f32, pal.border))
                         .show(ui, |ui| {
@@ -10155,6 +10396,105 @@ impl ZaloGuiApp {
                         }
                     }
                 }
+                UiAction::PickWallpaper { chat_id } => {
+                    let Some(picked_path) = crate::gui::attachments::pick_single_image() else {
+                        continue;
+                    };
+                    let scope = chat_id.as_deref().unwrap_or("global");
+                    match Self::import_and_copy_wallpaper_file(&picked_path, scope) {
+                        Ok(stored_name) => {
+                            if !self.load_and_cache_wallpaper_texture(ctx, &stored_name) {
+                                self.show_toast("⚠️ Không thể giải mã tệp ảnh hình nền đã chọn");
+                                continue;
+                            }
+                            if let Some(tid) = chat_id {
+                                let dim = self
+                                    .settings
+                                    .chat_wallpapers
+                                    .get(&tid)
+                                    .map(|o| o.dim_opacity)
+                                    .unwrap_or(self.settings.wallpaper_dim_opacity);
+                                self.settings.chat_wallpapers.insert(
+                                    tid.clone(),
+                                    ChatWallpaperOverride {
+                                        image_file: stored_name.clone(),
+                                        dim_opacity: dim,
+                                    },
+                                );
+                                self.settings.save();
+                                self.persist_wallpaper_to_sqlite(&tid, Some(&stored_name), dim);
+                                self.show_toast("🖼 Đã cập nhật hình nền riêng cho đoạn chat này");
+                            } else {
+                                self.settings.wallpaper_image_file = Some(stored_name.clone());
+                                self.settings.save();
+                                self.persist_wallpaper_to_sqlite(
+                                    "__global__",
+                                    Some(&stored_name),
+                                    self.settings.wallpaper_dim_opacity,
+                                );
+                                self.show_toast("🖼 Đã áp dụng hình nền mới cho ứng dụng");
+                            }
+                            ctx.request_repaint();
+                        }
+                        Err(err) => {
+                            self.show_toast(format!("⚠️ {err}"));
+                        }
+                    }
+                }
+                UiAction::UpdateWallpaperStyle {
+                    dim_opacity,
+                    panel_opacity,
+                    fit_mode,
+                } => {
+                    self.settings.wallpaper_dim_opacity = dim_opacity.clamp(0.0, 0.95);
+                    self.settings.wallpaper_panel_opacity = panel_opacity.clamp(0.40, 1.0);
+                    self.settings.wallpaper_fit_mode = fit_mode;
+                    self.settings.save();
+                    let g_img = self
+                        .settings
+                        .wallpaper_image_file
+                        .clone()
+                        .unwrap_or_default();
+                    self.persist_wallpaper_to_sqlite(
+                        "__global__",
+                        Some(&g_img),
+                        self.settings.wallpaper_dim_opacity,
+                    );
+                    ctx.request_repaint();
+                }
+                UiAction::UpdateChatWallpaperDim {
+                    chat_id,
+                    dim_opacity,
+                } => {
+                    let clamped = dim_opacity.clamp(0.0, 0.95);
+                    let mut updated_file: Option<String> = None;
+                    if let Some(ov) = self.settings.chat_wallpapers.get_mut(&chat_id) {
+                        ov.dim_opacity = clamped;
+                        updated_file = Some(ov.image_file.clone());
+                    }
+                    if let Some(img_file) = updated_file {
+                        self.settings.save();
+                        self.persist_wallpaper_to_sqlite(&chat_id, Some(&img_file), clamped);
+                        ctx.request_repaint();
+                    }
+                }
+                UiAction::ClearWallpaper { chat_id } => {
+                    if let Some(tid) = chat_id {
+                        self.settings.chat_wallpapers.remove(&tid);
+                        self.settings.save();
+                        self.persist_wallpaper_to_sqlite(&tid, None, 0.65);
+                        self.show_toast("Đã khôi phục hình nền chung cho đoạn chat này");
+                    } else {
+                        self.settings.wallpaper_image_file = None;
+                        self.settings.wallpaper_dim_opacity = 0.65;
+                        self.settings.wallpaper_panel_opacity = 0.85;
+                        self.settings.wallpaper_fit_mode = WallpaperFitMode::Cover;
+                        self.settings.save();
+                        self.persist_wallpaper_to_sqlite("__global__", None, 0.65);
+                        self.show_toast("Đã xoá hình nền tùy chỉnh và khôi phục mặc định");
+                    }
+                    ctx.request_repaint();
+                }
             }
         }
     }
@@ -10285,5 +10625,21 @@ mod quote_navigation_tests {
                 .expect("should replace active mention");
         assert_eq!(new_draft, "Nhắc @Anh Tuấn về báo cáo");
         assert_eq!(next_cursor, "Nhắc @Anh Tuấn".chars().count());
+
+        // Wallpaper aspect-ratio UV cropping (Cover / Contain / Stretch)
+        let vp = Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 400.0)); // 2:1 viewport
+        // 1:1 square image in Cover mode crops top/bottom UVs symmetrically to 0.25..0.75
+        let (draw_cover, uv_cover) =
+            compute_wallpaper_draw_geometry(vp, 1000, 1000, WallpaperFitMode::Cover);
+        assert_eq!(draw_cover, vp);
+        assert!((uv_cover.min.x - 0.0).abs() < 1e-4 && (uv_cover.max.x - 1.0).abs() < 1e-4);
+        assert!((uv_cover.min.y - 0.25).abs() < 1e-4 && (uv_cover.max.y - 0.75).abs() < 1e-4);
+
+        // 1:1 square image in Contain mode inside 800x400 viewport centers a 400x400 rect
+        let (draw_contain, uv_contain) =
+            compute_wallpaper_draw_geometry(vp, 1000, 1000, WallpaperFitMode::Contain);
+        assert!((draw_contain.width() - 400.0).abs() < 1e-3);
+        assert!((draw_contain.height() - 400.0).abs() < 1e-3);
+        assert_eq!(uv_contain, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)));
     }
 }
