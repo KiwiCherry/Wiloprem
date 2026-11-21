@@ -460,25 +460,27 @@ impl ZaloGuiApp {
             )
         } else {
             let min_w = crate::gui::design_system::tokens::layout::SIDEBAR_W_MIN;
-            let raw_w = if screen_w.is_finite() {
+            let raw_w = if screen_w.is_finite() && screen_w > 0.0 {
                 screen_w * 0.45
             } else {
                 360.0
             };
+            let hi_w = crate::gui::design_system::tokens::layout::SIDEBAR_W_MAX.max(360.0);
             let max_w = raw_w
-                .clamp(
-                    360.0,
-                    crate::gui::design_system::tokens::layout::SIDEBAR_W_MAX,
-                )
+                .clamp(360.0, hi_w)
                 .max(min_w);
             ("conversation_sidebar", min_w, max_w)
         };
-        let sidebar_safe_max_w = sidebar_max_w.max(sidebar_min_w);
+        let sidebar_safe_max_w = if sidebar_max_w.is_finite() {
+            sidebar_max_w.max(sidebar_min_w)
+        } else {
+            sidebar_min_w
+        };
         let sidebar_default_w = if is_narrow_w {
             crate::gui::design_system::tokens::layout::SIDEBAR_W_COLLAPSED
         } else {
             crate::gui::design_system::tokens::layout::SIDEBAR_W_DEFAULT
-                .clamp(sidebar_min_w, sidebar_safe_max_w)
+                .clamp(sidebar_min_w, sidebar_safe_max_w.max(sidebar_min_w))
         };
         egui::SidePanel::left(sidebar_id)
             .resizable(!is_narrow_w)

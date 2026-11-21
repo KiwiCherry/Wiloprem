@@ -8451,10 +8451,20 @@ impl ZaloGuiApp {
         let disp_h = (base_h * viewer.zoom).max(48.0);
 
         // Clamp pan so the image stays centered when <= stage size, and pans within bounds when enlarged
-        let max_pan_x = ((disp_w - stage_area_rect.width() + 40.0) * 0.5).max(0.0);
-        let max_pan_y = ((disp_h - stage_area_rect.height() + 40.0) * 0.5).max(0.0);
-        viewer.pan.x = viewer.pan.x.clamp(-max_pan_x, max_pan_x);
-        viewer.pan.y = viewer.pan.y.clamp(-max_pan_y, max_pan_y);
+        let raw_pan_x = (disp_w - stage_area_rect.width() + 40.0) * 0.5;
+        let raw_pan_y = (disp_h - stage_area_rect.height() + 40.0) * 0.5;
+        let max_pan_x = if raw_pan_x.is_finite() { raw_pan_x.max(0.0) } else { 0.0 };
+        let max_pan_y = if raw_pan_y.is_finite() { raw_pan_y.max(0.0) } else { 0.0 };
+        viewer.pan.x = if viewer.pan.x.is_finite() {
+            viewer.pan.x.clamp(-max_pan_x, max_pan_x)
+        } else {
+            0.0
+        };
+        viewer.pan.y = if viewer.pan.y.is_finite() {
+            viewer.pan.y.clamp(-max_pan_y, max_pan_y)
+        } else {
+            0.0
+        };
 
         // 1. Unified Clipped Stage Canvas (never uses a floating Area at img_pos so it NEVER shifts left!)
         egui::Area::new(Id::new("image_viewer_backdrop"))

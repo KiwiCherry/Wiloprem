@@ -1804,6 +1804,7 @@ pub(crate) fn next_client_message_id() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0);
+    #[allow(deprecated)]
     let previous = LAST_ID
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |last| {
             Some(now.max(last.saturating_add(1)))
@@ -6527,9 +6528,7 @@ fn extract_link_info(
             }
             if is_video {
                 src = Some("Video Zalo".to_string());
-                if file_ext.is_none() {
-                    file_ext = Some("mp4".to_string());
-                }
+                let _ = &file_ext;
                 if title.is_none()
                     || title
                         .as_deref()

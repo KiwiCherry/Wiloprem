@@ -2052,12 +2052,18 @@ pub(super) fn render_message_body(
                         let _ = open_external_url(&open_target);
                     }
                 } else {
-                    let tw_f = tw as f32;
-                    let th_f = th as f32;
-                    let max_w = max_text_width.min(360.0).max(110.0);
+                    let tw_f = (tw.max(1)) as f32;
+                    let th_f = (th.max(1)) as f32;
+                    let safe_max_text_w = if max_text_width.is_finite() && max_text_width > 0.0 {
+                        max_text_width
+                    } else {
+                        220.0
+                    };
+                    let max_w = safe_max_text_w.min(360.0).max(110.0);
                     let max_h = 340.0_f32;
                     let scale = (max_w / tw_f).min(max_h / th_f).min(1.0);
-                    let disp_w = (tw_f * scale).clamp(max_w.min(140.0), max_w);
+                    let lo_w = max_w.min(140.0);
+                    let disp_w = (tw_f * scale).clamp(lo_w, max_w.max(lo_w));
                     let disp_h = (th_f * scale).clamp(90.0, max_h);
                     let img = egui::Image::new(tex)
                         .fit_to_exact_size(Vec2::new(disp_w, disp_h))
@@ -2761,20 +2767,27 @@ fn render_image_file_card(
 pub(crate) fn compute_video_thumb_size(tw: usize, th: usize, max_text_width: f32) -> (f32, f32) {
     let tw_f = (tw.max(1)) as f32;
     let th_f = (th.max(1)) as f32;
+    let safe_max_text_w = if max_text_width.is_finite() && max_text_width > 0.0 {
+        max_text_width
+    } else {
+        220.0
+    };
     if th_f > tw_f {
         // Portrait / vertical video (e.g. 9:16 or 3:4)
         let max_h = 260.0_f32;
-        let max_w = max_text_width.min(220.0);
+        let max_w = safe_max_text_w.min(220.0).max(140.0);
         let scale = (max_w / tw_f).min(max_h / th_f);
-        let w = (tw_f * scale).clamp(140.0, max_w).ceil();
+        let lo_w = 140.0_f32.min(max_w);
+        let w = (tw_f * scale).clamp(lo_w, max_w.max(lo_w)).ceil();
         let h = (th_f * scale).clamp(160.0, max_h).ceil();
         (w, h)
     } else {
         // Landscape / horizontal video (e.g. 16:9 or 4:3)
-        let max_w = max_text_width.min(280.0);
+        let max_w = safe_max_text_w.min(280.0).max(160.0);
         let max_h = 180.0_f32;
         let scale = (max_w / tw_f).min(max_h / th_f);
-        let w = (tw_f * scale).clamp(160.0, max_w).ceil();
+        let lo_w = 160.0_f32.min(max_w);
+        let w = (tw_f * scale).clamp(lo_w, max_w.max(lo_w)).ceil();
         let h = (th_f * scale).clamp(100.0, max_h).ceil();
         (w, h)
     }
@@ -3709,12 +3722,17 @@ pub(super) fn render_chat_bubble(
     preview_error: Option<&str>,
     md: MdOptions,
 ) -> Option<BubbleAction> {
-    let avail_w = (ui.available_width() - 8.0).max(140.0);
+    let raw_avail_w = ui.available_width();
+    let avail_w = if raw_avail_w.is_finite() && raw_avail_w > 0.0 {
+        (raw_avail_w - 8.0).max(184.0)
+    } else {
+        360.0
+    };
     let max_bubble_width = (avail_w
         * crate::gui::design_system::tokens::layout::MESSAGE_MAX_FRACTION)
-        .clamp(140.0, 520.0)
-        .min(avail_w);
-    let max_text_width = (max_bubble_width - 24.0).max(90.0);
+        .clamp(184.0, 520.0)
+        .min(avail_w.max(184.0));
+    let max_text_width = (max_bubble_width - 24.0).max(160.0);
     // Tin đã biến mất: vô hiệu mọi media/link card — chỉ render text hệ thống.
     let vanished = msg.text.trim() == crate::chat::VANISH_EXPIRED_TEXT;
     let has_sticker = !vanished && is_sticker_message(msg).is_some();
@@ -3782,12 +3800,13 @@ pub(super) fn render_chat_bubble(
             if tw <= 2 || th <= 2 {
                 max_text_width.min(260.0).max(110.0)
             } else {
-                let tw_f = tw as f32;
-                let th_f = th as f32;
+                let tw_f = (tw.max(1)) as f32;
+                let th_f = (th.max(1)) as f32;
                 let max_w = max_text_width.min(360.0).max(110.0);
                 let max_h = 340.0_f32;
                 let scale = (max_w / tw_f).min(max_h / th_f).min(1.0);
-                (tw_f * scale).clamp(max_w.min(140.0), max_w).ceil()
+                let lo_w = max_w.min(140.0);
+                (tw_f * scale).clamp(lo_w, max_w.max(lo_w)).ceil()
             }
         } else {
             max_text_width.min(280.0).max(110.0)
@@ -3900,11 +3919,15 @@ pub(super) fn render_chat_bubble(
                         .max(measure(&dom, 12.6))
                         + 8.0
                 };
-                let max_w = if is_file_card { max_text_width.min(380.0) } else { max_text_width.min(360.0) };
+                let max_w = if is_file_card {
+                    max_text_width.min(380.0).max(1.0)
+                } else {
+                    max_text_width.min(360.0).max(1.0)
+                };
                 let preferred_min = if is_file_card { 280.0_f32 } else { 160.0_f32 };
                 let min_card_w = preferred_min.min(max_w);
-                w.clamp(min_card_w, max_w)
-                    .min(max_text_width)
+                w.clamp(min_card_w, max_w.max(min_card_w))
+                    .min(max_text_width.max(min_card_w))
                     .ceil()
             }
         }
@@ -4479,15 +4502,21 @@ pub(super) fn bubble_context_menu(
     let screen = ui.ctx().screen_rect();
     let menu_w = if has_reactions { 208.0_f32 } else { 180.0_f32 };
     let menu_h = 280.0_f32;
+    let lo_mx = if screen.left().is_finite() { screen.left() + 8.0 } else { 8.0 };
+    let hi_mx = if screen.right().is_finite() {
+        (screen.right() - menu_w - 8.0).max(lo_mx)
+    } else {
+        lo_mx
+    };
+    let lo_my = if screen.top().is_finite() { screen.top() + 8.0 } else { 8.0 };
+    let hi_my = if screen.bottom().is_finite() {
+        (screen.bottom() - menu_h - 8.0).max(lo_my)
+    } else {
+        lo_my
+    };
     let pos = Pos2::new(
-        menu_pos.x.clamp(
-            screen.left() + 8.0,
-            (screen.right() - menu_w - 8.0).max(screen.left() + 8.0),
-        ),
-        menu_pos.y.clamp(
-            screen.top() + 8.0,
-            (screen.bottom() - menu_h - 8.0).max(screen.top() + 8.0),
-        ),
+        if menu_pos.x.is_finite() { menu_pos.x.clamp(lo_mx, hi_mx) } else { lo_mx },
+        if menu_pos.y.is_finite() { menu_pos.y.clamp(lo_my, hi_my) } else { lo_my },
     );
 
     egui::Area::new(Id::new(("active_ctx_menu_area", idx, msg.ts, &msg.id)))
@@ -4933,14 +4962,19 @@ pub(super) fn render_hover_reaction_bar(
     let clip_left = ui.clip_rect().left();
     // Vùng hẹp hơn bar (drawer mở + cửa sổ nhỏ): min>max sẽ panic f32::clamp.
     // Không đủ chỗ thì dính sát mép trái, bar tràn ra cũng không crash.
-    let lo = clip_left + 8.0;
-    let hi = (clip_right - bar_w - 8.0).max(lo);
+    let lo = if clip_left.is_finite() { clip_left + 8.0 } else { 8.0 };
+    let hi = if clip_right.is_finite() {
+        (clip_right - bar_w - 8.0).max(lo)
+    } else {
+        lo
+    };
 
     let x = if outgoing {
-        (bubble_rect.right() - bar_w).clamp(lo, hi)
+        let raw_x = bubble_rect.right() - bar_w;
+        if raw_x.is_finite() { raw_x.clamp(lo, hi) } else { lo }
     } else {
         let desired_x = (bubble_rect.right() - bar_w).max(bubble_rect.left());
-        desired_x.clamp(lo, hi)
+        if desired_x.is_finite() { desired_x.clamp(lo, hi) } else { lo }
     };
 
     // If there is enough room above the bubble, place above; otherwise place below
@@ -6135,6 +6169,14 @@ mod md_block_tests {
         assert!(lw > lh, "Landscape video must have width > height: ({lw}, {lh})");
         assert!(lw >= 160.0 && lw <= 280.0, "Landscape width within bounds: {lw}");
         assert!(lh <= 180.0, "Landscape height capped at 180: {lh}");
+
+        // Narrow/initial frame regression test: max_text_width = 158.88 (< 160.0) or NaN must never panic
+        for max_w in [0.0_f32, 90.0, 158.88, 220.0, f32::NAN] {
+            let (pw2, ph2) = compute_video_thumb_size(720, 1280, max_w);
+            assert!(pw2 >= 140.0 && ph2 >= 160.0);
+            let (lw2, lh2) = compute_video_thumb_size(1280, 720, max_w);
+            assert!(lw2 >= 160.0 && lh2 >= 100.0);
+        }
     }
 
     #[test]
