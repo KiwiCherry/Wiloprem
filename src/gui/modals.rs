@@ -9459,19 +9459,25 @@ impl ZaloGuiApp {
                                     ContactsSubTab::Friends | ContactsSubTab::Groups => {
                                         let want_group =
                                             self.contacts_sub_tab == ContactsSubTab::Groups;
-                                        let mut items: Vec<(String, String, Option<String>, bool)> =
+                                        let mut items: Vec<(String, String, String, Option<String>, bool)> =
                                             self.threads
                                                 .iter()
                                                 .filter(|t| {
+                                                    let eff = self.effective_name(&t.id, &t.name);
                                                     t.is_group == want_group
                                                         && !t.name.contains("Cloud của tôi")
-                                                        && matches_vn_query(
+                                                        && (matches_vn_query(
                                                             &t.name, &q_low, &q_fold,
-                                                        )
+                                                        ) || matches_vn_query(
+                                                            eff, &q_low, &q_fold,
+                                                        ))
                                                 })
                                                 .map(|t| {
+                                                    let eff =
+                                                        self.effective_name(&t.id, &t.name).to_string();
                                                     (
                                                         t.id.clone(),
+                                                        eff,
                                                         t.name.clone(),
                                                         t.avatar.clone(),
                                                         t.is_group,
@@ -9588,7 +9594,9 @@ impl ZaloGuiApp {
                                                 ui.add_space(10.0);
 
                                                 let mut current_letter = String::new();
-                                                for (tid, tname, tava, is_grp) in items {
+                                                let mut open_alias_req: Option<(String, String)> =
+                                                    None;
+                                                for (tid, tname, torig, tava, is_grp) in items {
                                                     let first_ch = tname
                                                         .trim()
                                                         .chars()
@@ -9630,13 +9638,39 @@ impl ZaloGuiApp {
                                                         &self.sticker_textures,
                                                         &mut self.loading_stickers,
                                                     );
-                                                    ui.painter().text(
-                                                        Pos2::new(r.left() + 60.0, r.center().y),
-                                                        egui::Align2::LEFT_CENTER,
-                                                        &tname,
-                                                        FontId::proportional(14.2),
-                                                        pal.text_primary,
-                                                    );
+                                                    if tname != torig {
+                                                        ui.painter().text(
+                                                            Pos2::new(
+                                                                r.left() + 60.0,
+                                                                r.center().y - 8.0,
+                                                            ),
+                                                            egui::Align2::LEFT_CENTER,
+                                                            &tname,
+                                                            FontId::proportional(14.2),
+                                                            pal.text_primary,
+                                                        );
+                                                        ui.painter().text(
+                                                            Pos2::new(
+                                                                r.left() + 60.0,
+                                                                r.center().y + 10.0,
+                                                            ),
+                                                            egui::Align2::LEFT_CENTER,
+                                                            format!("Tên Zalo: {torig}"),
+                                                            FontId::proportional(11.5),
+                                                            pal.text_muted,
+                                                        );
+                                                    } else {
+                                                        ui.painter().text(
+                                                            Pos2::new(
+                                                                r.left() + 60.0,
+                                                                r.center().y,
+                                                            ),
+                                                            egui::Align2::LEFT_CENTER,
+                                                            &tname,
+                                                            FontId::proportional(14.2),
+                                                            pal.text_primary,
+                                                        );
+                                                    }
                                                     ui.painter().text(
                                                         Pos2::new(r.right() - 16.0, r.center().y),
                                                         egui::Align2::RIGHT_CENTER,
@@ -9654,13 +9688,37 @@ impl ZaloGuiApp {
                                                             pal.border.linear_multiply(0.45),
                                                         ),
                                                     );
+                                                    let tid_ctx = tid.clone();
+                                                    let torig_ctx = torig.clone();
+                                                    resp.context_menu(|ui| {
+                                                        if ui
+                                                            .button("Đặt tên gợi nhớ")
+                                                            .clicked()
+                                                        {
+                                                            open_alias_req =
+                                                                Some((tid_ctx.clone(), torig_ctx.clone()));
+                                                            ui.close_menu();
+                                                        }
+                                                    });
                                                     if resp
                                                         .on_hover_cursor(CursorIcon::PointingHand)
-                                                        .on_hover_text("Bấm để mở cuộc trò chuyện")
+                                                        .on_hover_text("Bấm để mở cuộc trò chuyện (Chuột phải để đặt tên gợi nhớ)")
                                                         .clicked()
                                                     {
                                                         open_thread_id = Some((tid, is_grp));
                                                     }
+                                                }
+                                                if let Some((uid, orig)) = open_alias_req {
+                                                    let mut acts = vec![UiAction::OpenAliasModal {
+                                                        user_id: uid,
+                                                        original_name: orig,
+                                                    }];
+                                                    self.apply_ui_actions(&mut acts, ctx);
+                                                }
+                                                let mut modal_acts = Vec::new();
+                                                self.render_alias_modal(ctx, pal, &mut modal_acts);
+                                                if !modal_acts.is_empty() {
+                                                    self.apply_ui_actions(&mut modal_acts, ctx);
                                                 }
                                             });
                                     }
@@ -9711,6 +9769,139 @@ impl ZaloGuiApp {
                     }
                 }
             });
+    }
+
+    /// Renders the themed local-only Contact Alias (`Tên gợi nhớ`) editor modal using `design-system` primitives.
+    ///
+    /// - `Enter` or clicking `"Lưu"` emits `UiAction::SetContactAlias` (or `UiAction::ClearContactAlias` when empty/whitespace).
+    /// - Clicking `"Xoá tên gợi nhớ"` emits `UiAction::ClearContactAlias`.
+    /// - `Esc`, backdrop click, or `"Huỷ"` closes the modal without changes.
+    pub(super) fn render_alias_modal(
+        &mut self,
+        ctx: &egui::Context,
+        pal: &ThemePalette,
+        ui_actions: &mut Vec<UiAction>,
+    ) {
+        let Some((target_uid, orig_name)) = self.alias_modal_target.clone() else {
+            return;
+        };
+        let has_existing_alias = self.contact_alias(&target_uid).is_some();
+        let mut draft = self.alias_modal_input.clone();
+        let mut focus_pending = self.alias_modal_focus_pending;
+        let mut save_requested = false;
+        let mut clear_requested = false;
+        let mut cancel_requested = false;
+
+        let modal_close = crate::gui::design_system::widgets::show_modal(
+            ctx,
+            pal,
+            "contact_alias_editor_modal",
+            "Đặt tên gợi nhớ",
+            420.0,
+            |ui| {
+                ui.spacing_mut().item_spacing.y =
+                    crate::gui::design_system::tokens::space::SM;
+                ui.label(
+                    TextRole::Body
+                        .rich(
+                            format!("Hãy nhập tên gợi nhớ cho {orig_name}:"),
+                            pal.text_primary,
+                        ),
+                );
+                ui.label(
+                    TextRole::Caption
+                        .rich(
+                            "Tên gợi nhớ chỉ hiển thị trên thiết bị này và không đồng bộ lên máy chủ Zalo.",
+                            pal.text_muted,
+                        ),
+                );
+                ui.add_space(crate::gui::design_system::tokens::space::XS);
+
+                let mut submitted_by_enter = false;
+                crate::gui::design_system::widgets::input_frame(pal, false).show(ui, |ui| {
+                    let te_resp = ui.add(
+                        egui::TextEdit::singleline(&mut draft)
+                            .id(Id::new("contact_alias_modal_text_edit"))
+                            .frame(false)
+                            .hint_text(format!("Tên gốc: {orig_name}"))
+                            .desired_width(ui.available_width()),
+                    );
+                    if focus_pending {
+                        te_resp.request_focus();
+                        focus_pending = false;
+                    }
+                    if te_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                        submitted_by_enter = true;
+                    }
+                });
+                if submitted_by_enter {
+                    save_requested = true;
+                }
+
+                ui.add_space(crate::gui::design_system::tokens::space::MD);
+                ui.horizontal(|ui| {
+                    if has_existing_alias
+                        && crate::gui::design_system::widgets::button(
+                            ui,
+                            pal,
+                            crate::gui::design_system::widgets::ButtonKind::Danger,
+                            "Xoá tên gợi nhớ",
+                            true,
+                        )
+                        .clicked()
+                    {
+                        clear_requested = true;
+                    }
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if crate::gui::design_system::widgets::button(
+                            ui,
+                            pal,
+                            crate::gui::design_system::widgets::ButtonKind::Primary,
+                            "Lưu",
+                            true,
+                        )
+                        .clicked()
+                        {
+                            save_requested = true;
+                        }
+                        if crate::gui::design_system::widgets::button(
+                            ui,
+                            pal,
+                            crate::gui::design_system::widgets::ButtonKind::Secondary,
+                            "Huỷ",
+                            true,
+                        )
+                        .clicked()
+                        {
+                            cancel_requested = true;
+                        }
+                    });
+                });
+            },
+        );
+
+        self.alias_modal_input = draft.clone();
+        self.alias_modal_focus_pending = focus_pending;
+
+        if clear_requested {
+            ui_actions.push(UiAction::ClearContactAlias {
+                user_id: target_uid,
+            });
+        } else if save_requested {
+            if draft.trim().is_empty() {
+                ui_actions.push(UiAction::ClearContactAlias {
+                    user_id: target_uid,
+                });
+            } else {
+                ui_actions.push(UiAction::SetContactAlias {
+                    user_id: target_uid,
+                    alias: draft,
+                });
+            }
+        } else if cancel_requested || modal_close.is_some() {
+            self.alias_modal_target = None;
+            self.alias_modal_focus_pending = false;
+        }
     }
 
     pub(super) fn trigger_feed_timeline_load(&mut self) {
@@ -9910,7 +10101,10 @@ impl ZaloGuiApp {
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing.y = 3.0;
                         for prof in &profiles_snap {
+                            let prof_eff_name =
+                                self.effective_name(&prof.uid, &prof.display_name).to_string();
                             if !matches_vn_query(&prof.display_name, &q_low, &q_fold)
+                                && !matches_vn_query(&prof_eff_name, &q_low, &q_fold)
                                 && !matches_vn_query(&prof.status, &q_low, &q_fold)
                             {
                                 continue;
@@ -9945,7 +10139,7 @@ impl ZaloGuiApp {
                                 ui.painter(),
                                 av_c,
                                 18.0,
-                                &prof.display_name,
+                                &prof_eff_name,
                                 false,
                                 Some(&prof.avatar_url),
                                 &self.sticker_textures,
@@ -9954,7 +10148,7 @@ impl ZaloGuiApp {
                             ui.painter().text(
                                 Pos2::new(row_rect.left() + 52.0, row_rect.top() + 17.0),
                                 egui::Align2::LEFT_CENTER,
-                                truncate_chars(&prof.display_name, 22),
+                                truncate_chars(&prof_eff_name, 22),
                                 FontId::proportional(13.2),
                                 if is_sel && pal.is_dark {
                                     Color32::WHITE

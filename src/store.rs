@@ -274,6 +274,8 @@ impl MessageStore {
         Self::ensure_edit_history_schema(&conn)?;
         // Per-thread mini script workspace: bảng thread_scripts + thread_data + logs.
         Self::ensure_script_schema(&conn)?;
+        // Local-only contact aliases / custom nicknames (Tên gợi nhớ).
+        Self::ensure_contact_aliases_schema(&conn)?;
         let user_ver = conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?;
         if user_ver < 1 {
             conn.execute_batch(
@@ -851,6 +853,78 @@ impl MessageStore {
                 |r| r.get::<_, String>(0),
             )
             .ok()
+    }
+
+    /// Ensures the local-only `contact_aliases` table exists.
+    ///
+    /// Idempotent migration run on every `MessageStore::open` so existing databases stay intact.
+    fn ensure_contact_aliases_schema(conn: &Connection) -> Result<()> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS contact_aliases (
+                user_id TEXT PRIMARY KEY,
+                alias TEXT NOT NULL,
+                updated_at INTEGER
+            );",
+        )?;
+        Ok(())
+    }
+
+    /// Loads all non-empty contact aliases into an in-memory `HashMap<user_id, alias>`.
+    pub fn load_contact_aliases(&self) -> Result<std::collections::HashMap<String, String>> {
+        Self::ensure_contact_aliases_schema(&self.conn)?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT user_id, alias FROM contact_aliases")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut map = std::collections::HashMap::new();
+        for row in rows {
+            let (uid, alias) = row?;
+            let uid_trimmed = uid.trim();
+            let alias_trimmed = alias.trim();
+            if !uid_trimmed.is_empty() && !alias_trimmed.is_empty() {
+                map.insert(uid_trimmed.to_string(), alias_trimmed.to_string());
+            }
+        }
+        Ok(map)
+    }
+
+    /// Upserts a local contact alias (`Tên gợi nhớ`). If `alias` is empty or whitespace-only,
+    /// removes the alias row instead.
+    pub fn set_contact_alias(&mut self, user_id: &str, alias: &str, updated_at: i64) -> Result<()> {
+        let uid = user_id.trim();
+        if uid.is_empty() {
+            return Ok(());
+        }
+        Self::ensure_contact_aliases_schema(&self.conn)?;
+        let trimmed = alias.trim();
+        if trimmed.is_empty() {
+            return self.delete_contact_alias(uid);
+        }
+        self.conn.execute(
+            "INSERT INTO contact_aliases (user_id, alias, updated_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(user_id) DO UPDATE SET
+                 alias = excluded.alias,
+                 updated_at = excluded.updated_at",
+            params![uid, trimmed, updated_at],
+        )?;
+        Ok(())
+    }
+
+    /// Deletes a local contact alias for `user_id`.
+    pub fn delete_contact_alias(&mut self, user_id: &str) -> Result<()> {
+        let uid = user_id.trim();
+        if uid.is_empty() {
+            return Ok(());
+        }
+        Self::ensure_contact_aliases_schema(&self.conn)?;
+        self.conn.execute(
+            "DELETE FROM contact_aliases WHERE user_id = ?1",
+            params![uid],
+        )?;
+        Ok(())
     }
 
     /// Ghi 1 KV riêng của thread (upsert).
@@ -4448,5 +4522,36 @@ mod tests {
 
         drop(st);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn contact_aliases_crud_and_idempotent_migration() {
+        let mut st = MessageStore::open(":memory:").unwrap();
+        assert!(st.load_contact_aliases().unwrap().is_empty());
+
+        st.set_contact_alias("10001", "  Anh Hai Sài Gòn  ", 1_700_000_000)
+            .unwrap();
+        st.set_contact_alias("10002", "Sếp Minh", 1_700_000_010)
+            .unwrap();
+        let loaded = st.load_contact_aliases().unwrap();
+        assert_eq!(loaded.get("10001").map(String::as_str), Some("Anh Hai Sài Gòn"));
+        assert_eq!(loaded.get("10002").map(String::as_str), Some("Sếp Minh"));
+
+        // Updating an existing alias overwrites cleanly
+        st.set_contact_alias("10001", "Anh Hai", 1_700_000_020)
+            .unwrap();
+        let loaded = st.load_contact_aliases().unwrap();
+        assert_eq!(loaded.get("10001").map(String::as_str), Some("Anh Hai"));
+
+        // Passing whitespace-only string removes the alias
+        st.set_contact_alias("10001", "   ", 1_700_000_030)
+            .unwrap();
+        let loaded = st.load_contact_aliases().unwrap();
+        assert!(!loaded.contains_key("10001"));
+        assert_eq!(loaded.get("10002").map(String::as_str), Some("Sếp Minh"));
+
+        // Explicit delete
+        st.delete_contact_alias("10002").unwrap();
+        assert!(st.load_contact_aliases().unwrap().is_empty());
     }
 }

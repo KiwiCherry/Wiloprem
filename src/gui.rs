@@ -35,6 +35,7 @@ mod worker;
 mod workspace;
 
 use actions::*;
+use crate::gui::design_system::typography::TextRole;
 use messages::*;
 use stickers::*;
 use theme::*;
@@ -1699,6 +1700,14 @@ pub struct ZaloGuiApp {
     pub(crate) edit_history_open: Option<(String, String)>,
     /// Modal quản lý Chat Folders (WaveA3).
     pub(crate) folder_modal_open: bool,
+    /// In-memory cache of local-only contact aliases (`user_id` -> `alias`) loaded from SQLite.
+    pub(crate) contact_aliases: HashMap<String, String>,
+    /// Active target `(user_id, original_name)` for the Contact Alias (`Tên gợi nhớ`) modal.
+    pub(crate) alias_modal_target: Option<(String, String)>,
+    /// Draft text buffer inside the Contact Alias (`Tên gợi nhớ`) modal.
+    pub(crate) alias_modal_input: String,
+    /// Auto-focus flag when the Contact Alias modal opens.
+    pub(crate) alias_modal_focus_pending: bool,
     last_typing_sent_at: Option<(String, std::time::Instant)>,
     last_synced_icon_unread: Option<usize>,
     // Background channels
@@ -1846,6 +1855,8 @@ impl ZaloGuiApp {
             .max_by_key(|(_, t)| t.messages.last().map(|m| m.ts).unwrap_or(0))
             .map(|(idx, _)| idx)
             .unwrap_or(0);
+
+        let initial_contact_aliases = Self::load_contact_aliases_for_account(&user_uin);
 
         let app = Self {
             dark_mode,
@@ -2047,6 +2058,10 @@ impl ZaloGuiApp {
             edit_history_cache: HashMap::new(),
             edit_history_open: None,
             folder_modal_open: false,
+            contact_aliases: initial_contact_aliases,
+            alias_modal_target: None,
+            alias_modal_input: String::new(),
+            alias_modal_focus_pending: false,
             last_typing_sent_at: None,
             last_synced_icon_unread: None,
             event_rx: rx,
@@ -2101,6 +2116,43 @@ impl ZaloGuiApp {
             let _ = wtx.send(WorkerCmd::CheckForUpdates { silent: true });
         }
         app
+    }
+
+    /// Loads local-only contact aliases (`Tên gợi nhớ`) from SQLite into an in-memory `HashMap`.
+    ///
+    /// Called once on startup and when switching accounts so `egui` frames read directly from RAM
+    /// with zero disk blocking. Also merges any aliases stored in the default `zalo_history.db`
+    /// fallback database so single-account and multi-account setups both work seamlessly.
+    pub(crate) fn load_contact_aliases_for_account(uin: &str) -> HashMap<String, String> {
+        let mut map = HashMap::new();
+        if let Ok(st) = crate::store::MessageStore::open("zalo_history.db") {
+            if let Ok(base) = st.load_contact_aliases() {
+                map.extend(base);
+            }
+        }
+        let db = crate::store::db_path_for_account(uin);
+        if db != "zalo_history.db" {
+            if let Ok(st) = crate::store::MessageStore::open(&db) {
+                if let Ok(acc) = st.load_contact_aliases() {
+                    map.extend(acc);
+                }
+            }
+        }
+        map
+    }
+
+    /// Returns the trimmed local alias (`Tên gợi nhớ`) for `user_id` if present and non-empty.
+    pub(crate) fn contact_alias(&self, user_id: &str) -> Option<&str> {
+        self.contact_aliases
+            .get(user_id.trim())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+    }
+
+    /// Centralized display-name resolver returning the trimmed local alias (`Tên gợi nhớ`)
+    /// if present and non-empty, otherwise falling back to `fallback_name`.
+    pub(crate) fn effective_name<'a>(&'a self, user_id: &str, fallback_name: &'a str) -> &'a str {
+        self.contact_alias(user_id).unwrap_or(fallback_name)
     }
 }
 
@@ -2620,11 +2672,17 @@ impl ZaloGuiApp {
                     // Refresh (đã login) thì merge, KHÔNG clear — clear + nạp lại sẽ
                     // khiến nhánh brand-new đếm toàn bộ history thành unread (#119).
                     let is_refresh = self.is_logged_in;
+                    let uin_changed = self.user_uin != uin;
                     self.is_logged_in = true;
                     self.pending_add_account_uin = None;
                     self.user_name = name;
                     self.user_uin = uin;
                     crate::account_manager::set_active_uin(&self.user_uin);
+                    if uin_changed || self.contact_aliases.is_empty() {
+                        self.contact_aliases =
+                            Self::load_contact_aliases_for_account(&self.user_uin);
+                        self.thread_list_cache = None;
+                    }
                     self.background_unread.remove(&self.user_uin);
                     if avatar.is_some() {
                         self.user_avatar = avatar;
@@ -3134,6 +3192,9 @@ impl ZaloGuiApp {
                     self.pending_add_account_uin = None;
                     self.user_uin = uin;
                     crate::account_manager::set_active_uin(&self.user_uin);
+                    self.contact_aliases = Self::load_contact_aliases_for_account(&self.user_uin);
+                    self.alias_modal_target = None;
+                    self.thread_list_cache = None;
                     self.background_unread.remove(&self.user_uin);
                     // Counts were keyed by the previous account's threads. Rebuild them
                     // from the read-points so messages stored while this account was in

@@ -649,6 +649,7 @@ impl ZaloGuiApp {
                 #[derive(Clone)]
                 enum ThreadCtxAction {
                     TogglePin(String, bool, bool),
+                    EditAlias(String, String),
                     SetLabel(String, Option<String>),
                     ToggleUnread(String, bool, bool),
                     SetMute(String, bool, Option<i64>, String),
@@ -722,6 +723,8 @@ impl ZaloGuiApp {
                             }
 
                             // Avatar circle with real user/group image & Cutout Status Dot
+                            let resolved_thread_title =
+                                self.effective_name(&t.id, &t.name).to_string();
                             let av_radius = if is_narrow_w { 19.0 } else { 22.0 };
                             let avatar_center = if is_narrow_w {
                                 row_rect.center()
@@ -732,7 +735,7 @@ impl ZaloGuiApp {
                                 ui.painter(),
                                 avatar_center,
                                 av_radius,
-                                &t.name,
+                                &resolved_thread_title,
                                 t.is_group,
                                 t.avatar.as_deref(),
                                 &self.sticker_textures,
@@ -836,7 +839,7 @@ impl ZaloGuiApp {
                                 };
                                 let avail_name_w = (row_rect.right() - name_x - reserved_right).max(35.0);
                                 let max_name_chars = ((avail_name_w / 7.2) as usize).clamp(8, 45);
-                                let display_name = truncate_chars(&t.name, max_name_chars);
+                                let display_name = truncate_chars(&resolved_thread_title, max_name_chars);
                                 ui.painter().text(
                                     Pos2::new(name_x, row_rect.top() + 12.0),
                                     egui::Align2::LEFT_TOP,
@@ -1061,10 +1064,10 @@ impl ZaloGuiApp {
                                 if narrow_unread > 0 {
                                     row_resp.on_hover_text(format!(
                                         "{}\n{} tin nhắn chưa đọc",
-                                        t.name, narrow_unread
+                                        resolved_thread_title, narrow_unread
                                     ))
                                 } else {
-                                    row_resp.on_hover_text(&t.name)
+                                    row_resp.on_hover_text(&resolved_thread_title)
                                 }
                             } else {
                                 row_resp
@@ -1102,6 +1105,27 @@ impl ZaloGuiApp {
                                         tid_cl.clone(),
                                         tgroup_cl,
                                         !is_user_pinned,
+                                    ));
+                                    ui.close_menu();
+                                }
+
+                                // 1b. Đặt tên gợi nhớ (Local Contact Alias)
+                                if !tname_cl.contains("Cloud của tôi")
+                                    && ui
+                                        .add(
+                                            egui::Button::new(
+                                                RichText::new("Đặt tên gợi nhớ")
+                                                    .size(13.5)
+                                                    .color(pal.text_primary),
+                                            )
+                                            .frame(false)
+                                            .min_size(Vec2::new(195.0, 28.0)),
+                                        )
+                                        .clicked()
+                                {
+                                    pending_ctx_action = Some(ThreadCtxAction::EditAlias(
+                                        tid_cl.clone(),
+                                        tname_cl.clone(),
                                     ));
                                     ui.close_menu();
                                 }
@@ -1479,11 +1503,16 @@ impl ZaloGuiApp {
                                 let av_c = Pos2::new(r_rect.left() + 24.0, r_rect.center().y);
                                 let hit_ava =
                                     self.threads.get(*t_idx).and_then(|th| th.avatar.as_deref());
+                                let hit_display_name: String = self
+                                    .threads
+                                    .get(*t_idx)
+                                    .map(|th| self.effective_name(&th.id, t_name).to_string())
+                                    .unwrap_or_else(|| t_name.clone());
                                 paint_user_avatar(
                                     ui.painter(),
                                     av_c,
                                     16.0,
-                                    t_name,
+                                    &hit_display_name,
                                     *t_group,
                                     hit_ava,
                                     &self.sticker_textures,
@@ -1493,7 +1522,7 @@ impl ZaloGuiApp {
                                 ui.painter().text(
                                     Pos2::new(tl, r_rect.top() + 9.0),
                                     egui::Align2::LEFT_TOP,
-                                    truncate_chars(t_name, 20),
+                                    truncate_chars(&hit_display_name, 20),
                                     FontId::proportional(12.8),
                                     pal.text_primary,
                                 );
@@ -1552,6 +1581,12 @@ impl ZaloGuiApp {
                 }
                 if let Some(act) = pending_ctx_action {
                     match act {
+                        ThreadCtxAction::EditAlias(tid, orig_name) => {
+                            ui_actions.push(UiAction::OpenAliasModal {
+                                user_id: tid,
+                                original_name: orig_name,
+                            });
+                        }
                         ThreadCtxAction::TogglePin(tid, is_group, pin) => {
                             if pin {
                                 if !self.settings.pinned_threads.contains(&tid) {
@@ -2086,11 +2121,14 @@ impl ZaloGuiApp {
                                     ui.add_space(16.0);
                                     let (av_rect, _) = ui
                                         .allocate_exact_size(Vec2::new(64.0, 64.0), Sense::hover());
+                                    let drawer_effective_name =
+                                        self.effective_name(d_id, d_name).to_string();
+                                    let drawer_has_alias = self.contact_alias(d_id).is_some();
                                     paint_user_avatar(
                                         ui.painter(),
                                         av_rect.center(),
                                         32.0,
-                                        d_name,
+                                        &drawer_effective_name,
                                         d_is_group,
                                         d_ava.as_deref(),
                                         &self.sticker_textures,
@@ -2098,103 +2136,67 @@ impl ZaloGuiApp {
                                     );
                                     ui.add_space(10.0);
 
-                                    // Name + Edit Alias Pencil button (like Zalo)
-                                    let rename_open_id = Id::new(("drw_rename_open", d_id.as_str()));
-                                    let rename_buf_id = Id::new(("drw_rename_buf", d_id.as_str()));
-                                    let mut is_renaming: bool =
-                                        ui.ctx().data(|d| d.get_temp(rename_open_id)).unwrap_or(false);
-
+                                    // Name + Edit Alias Pencil button (opens themed Tên gợi nhớ modal via UiAction)
                                     ui.horizontal(|ui| {
                                         let max_name_w = (drawer_w - 68.0).max(100.0);
-                                        let approx_w = (d_name.chars().count() as f32 * 7.8).min(max_name_w);
-                                        let pad_left = ((drawer_w - approx_w - 34.0) * 0.5).max(12.0);
+                                        let approx_w = (drawer_effective_name.chars().count() as f32 * 7.8)
+                                            .min(max_name_w);
+                                        let pad_left =
+                                            ((drawer_w - approx_w - 34.0) * 0.5).max(12.0);
                                         ui.add_space(pad_left);
                                         ui.add(
                                             egui::Label::new(
-                                                RichText::new(truncate_chars(d_name, 26))
-                                                    .size(15.0)
-                                                    .color(pal.text_primary)
+                                                TextRole::Title
+                                                    .rich(
+                                                        truncate_chars(&drawer_effective_name, 26),
+                                                        pal.text_primary,
+                                                    )
                                                     .strong(),
                                             )
                                             .truncate(),
                                         );
-                                        let (edit_r, edit_resp) =
-                                            ui.allocate_exact_size(Vec2::new(22.0, 22.0), Sense::click());
-                                        ui.painter().circle_filled(
-                                            edit_r.center(),
-                                            11.0,
-                                            if edit_resp.hovered() {
-                                                pal.bg_hover
-                                            } else {
-                                                pal.bg_elevated
-                                            },
-                                        );
-                                        draw_icon_pencil(
-                                            ui.painter(),
-                                            edit_r.center(),
-                                            11.5,
-                                            pal.text_secondary,
-                                        );
-                                        if edit_resp
-                                            .on_hover_cursor(CursorIcon::PointingHand)
-                                            .on_hover_text("Đổi tên gợi nhớ")
-                                            .clicked()
-                                        {
-                                            is_renaming = !is_renaming;
-                                            ui.ctx().data_mut(|d| {
-                                                d.insert_temp(rename_open_id, is_renaming);
-                                                if is_renaming {
-                                                    d.insert_temp(rename_buf_id, d_name.clone());
-                                                }
-                                            });
+                                        if !d_name.contains("Cloud của tôi") {
+                                            let (edit_r, edit_resp) = ui.allocate_exact_size(
+                                                Vec2::new(22.0, 22.0),
+                                                Sense::click(),
+                                            );
+                                            ui.painter().circle_filled(
+                                                edit_r.center(),
+                                                11.0,
+                                                if edit_resp.hovered() {
+                                                    pal.bg_hover
+                                                } else {
+                                                    pal.bg_elevated
+                                                },
+                                            );
+                                            draw_icon_pencil(
+                                                ui.painter(),
+                                                edit_r.center(),
+                                                11.5,
+                                                if edit_resp.hovered() {
+                                                    pal.text_primary
+                                                } else {
+                                                    pal.text_secondary
+                                                },
+                                            );
+                                            if edit_resp
+                                                .on_hover_cursor(CursorIcon::PointingHand)
+                                                .on_hover_text("Đặt tên gợi nhớ")
+                                                .clicked()
+                                            {
+                                                ui_actions.push(UiAction::OpenAliasModal {
+                                                    user_id: d_id.clone(),
+                                                    original_name: d_name.clone(),
+                                                });
+                                            }
                                         }
                                     });
-
-                                    if is_renaming {
-                                        ui.add_space(6.0);
-                                        let mut buf: String = ui
-                                            .ctx()
-                                            .data(|d| d.get_temp(rename_buf_id))
-                                            .unwrap_or_else(|| d_name.clone());
-                                        ui.horizontal(|ui| {
-                                            ui.add_space(16.0);
-                                            let te = ui.add(
-                                                egui::TextEdit::singleline(&mut buf)
-                                                    .desired_width(drawer_w - 96.0)
-                                                    .margin(Margin::symmetric(6.0, 4.0)),
-                                            );
-                                            let save_clicked = ui
-                                                .add(
-                                                    egui::Button::new(
-                                                        RichText::new("Lưu")
-                                                            .size(11.0)
-                                                            .color(Color32::WHITE),
-                                                    )
-                                                    .fill(pal.primary)
-                                                    .rounding(Rounding::same(6.0)),
-                                                )
-                                                .clicked();
-                                            let enter = te.lost_focus()
-                                                && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                                            if save_clicked || enter {
-                                                let trimmed = buf.trim().to_string();
-                                                if !trimmed.is_empty() {
-                                                    if let Some(th) =
-                                                        self.threads.iter_mut().find(|t| &t.id == d_id)
-                                                    {
-                                                        th.name = trimmed.clone();
-                                                        th.presentation.contact_name = true;
-                                                    }
-                                                    self.persist_threads_async();
-                                                    self.show_toast(format!(
-                                                        "Đã cập nhật tên hội thoại: {trimmed}"
-                                                    ));
-                                                }
-                                                ui.ctx().data_mut(|d| d.insert_temp(rename_open_id, false));
-                                            } else {
-                                                ui.ctx().data_mut(|d| d.insert_temp(rename_buf_id, buf));
-                                            }
-                                        });
+                                    if drawer_has_alias {
+                                        ui.add_space(2.0);
+                                        ui.label(
+                                            TextRole::Caption
+                                                .rich(format!("Tên Zalo: {d_name}"), pal.text_muted),
+                                        );
                                     }
 
                                     ui.add_space(2.0);
@@ -2689,12 +2691,15 @@ impl ZaloGuiApp {
                                         }
 
                                         let q = self.group_member_search.trim().to_lowercase();
+                                        let q_folded = fold_vn_search(&q);
                                         let filtered_members: Vec<&crate::chat::SidebarMember> =
                                             group_members
                                                 .iter()
                                                 .filter(|m| {
+                                                    let eff = self.effective_name(&m.id, &m.name);
                                                     q.is_empty()
-                                                        || m.name.to_lowercase().contains(&q)
+                                                        || matches_vn_query(&m.name, &q, &q_folded)
+                                                        || matches_vn_query(eff, &q, &q_folded)
                                                         || m.id.contains(&q)
                                                 })
                                                 .collect();
@@ -2706,6 +2711,8 @@ impl ZaloGuiApp {
                                             .show(ui, |ui| {
                                                 ui.spacing_mut().item_spacing = Vec2::new(0.0, 5.0);
                                                 for m in filtered_members {
+                                                    let m_eff_name =
+                                                        self.effective_name(&m.id, &m.name).to_string();
                                                     ui.horizontal(|ui| {
                                                         let (av_r, _) = ui.allocate_exact_size(
                                                             Vec2::new(26.0, 26.0),
@@ -2715,7 +2722,7 @@ impl ZaloGuiApp {
                                                             ui.painter(),
                                                             av_r.center(),
                                                             13.0,
-                                                            &m.name,
+                                                            &m_eff_name,
                                                             false,
                                                             m.avatar.as_deref(),
                                                             &self.sticker_textures,
@@ -2725,14 +2732,33 @@ impl ZaloGuiApp {
                                                         ui.add_space(4.0);
                                                         ui.vertical(|ui| {
                                                             ui.horizontal(|ui| {
-                                                                ui.label(
-                                                                    RichText::new(truncate_chars(
-                                                                        &m.name, 16,
-                                                                    ))
-                                                                    .size(12.0)
-                                                                    .color(pal.text_primary)
-                                                                    .strong(),
+                                                                let lbl_resp = ui.add(
+                                                                    egui::Label::new(
+                                                                        RichText::new(truncate_chars(
+                                                                            &m_eff_name, 16,
+                                                                        ))
+                                                                        .size(12.0)
+                                                                        .color(pal.text_primary)
+                                                                        .strong(),
+                                                                    )
+                                                                    .sense(Sense::click()),
                                                                 );
+                                                                let m_id_cl = m.id.clone();
+                                                                let m_orig_cl = m.name.clone();
+                                                                lbl_resp.context_menu(|ui| {
+                                                                    if ui
+                                                                        .button("Đặt tên gợi nhớ")
+                                                                        .clicked()
+                                                                    {
+                                                                        ui_actions.push(
+                                                                            UiAction::OpenAliasModal {
+                                                                                user_id: m_id_cl.clone(),
+                                                                                original_name: m_orig_cl.clone(),
+                                                                            },
+                                                                        );
+                                                                        ui.close_menu();
+                                                                    }
+                                                                });
                                                                 if m.role == "creator" {
                                                                     ui.label(
                                                                         RichText::new(
@@ -4609,6 +4635,11 @@ impl ZaloGuiApp {
                             .copied()
                             .unwrap_or(crate::chat::FriendshipStatus::Unknown)
                     };
+                    let header_active_alias = self.contact_alias(&thread_id).map(str::to_string);
+                    let header_effective_name = header_active_alias
+                        .as_deref()
+                        .unwrap_or(&thread_name)
+                        .to_string();
                     // 1. Clean Conversation Header Bar (No raw 19-digit ID, no bulky sync button)
                     egui::Frame::none()
                         .fill(pal.bg_sidebar)
@@ -4623,7 +4654,7 @@ impl ZaloGuiApp {
                                     ui.painter(),
                                     av_rect.center(),
                                     20.0,
-                                    &thread_name,
+                                    &header_effective_name,
                                     is_group,
                                     thread_avatar.as_deref(),
                                     &self.sticker_textures,
@@ -4659,7 +4690,7 @@ impl ZaloGuiApp {
                                             ui.add(
                                                 egui::Label::new(
                                                     RichText::new(truncate_chars(
-                                                        &thread_name,
+                                                        &header_effective_name,
                                                         name_max,
                                                     ))
                                                     .size(15.0)
@@ -4668,6 +4699,41 @@ impl ZaloGuiApp {
                                                 )
                                                 .truncate(),
                                             );
+                                            if !is_cloud_thread {
+                                                let (edit_r, edit_resp) = ui.allocate_exact_size(
+                                                    Vec2::new(20.0, 20.0),
+                                                    Sense::click(),
+                                                );
+                                                if edit_resp.hovered() {
+                                                    ui.painter().rect_filled(
+                                                        edit_r,
+                                                        Rounding::same(
+                                                            crate::gui::design_system::tokens::radius::SM,
+                                                        ),
+                                                        pal.bg_hover,
+                                                    );
+                                                }
+                                                draw_icon_pencil(
+                                                    ui.painter(),
+                                                    edit_r.center(),
+                                                    11.0,
+                                                    if edit_resp.hovered() {
+                                                        pal.text_primary
+                                                    } else {
+                                                        pal.text_muted
+                                                    },
+                                                );
+                                                if edit_resp
+                                                    .on_hover_cursor(CursorIcon::PointingHand)
+                                                    .on_hover_text("Đặt tên gợi nhớ")
+                                                    .clicked()
+                                                {
+                                                    ui_actions.push(UiAction::OpenAliasModal {
+                                                        user_id: thread_id.clone(),
+                                                        original_name: thread_name.clone(),
+                                                    });
+                                                }
+                                            }
                                             if !is_compact_w && left_info_w > 170.0 {
                                                 let (tag_lbl, tag_fg, tag_bg) =
                                                     if is_cloud_thread {
@@ -4792,11 +4858,17 @@ impl ZaloGuiApp {
                                                     }
                                                 }
                                             };
+                                        let sub_caption = if header_active_alias.is_some()
+                                            && !is_typing_now
+                                        {
+                                            format!("Tên Zalo: {thread_name} · {sub_status_lbl}")
+                                        } else {
+                                            sub_status_lbl
+                                        };
                                         let sub_resp = ui.add(
                                             egui::Label::new(
-                                                RichText::new(sub_status_lbl)
-                                                    .size(11.6)
-                                                    .color(sub_status_col),
+                                                TextRole::Caption
+                                                    .rich(sub_caption, sub_status_col),
                                             )
                                             .truncate()
                                             .sense(if is_group { egui::Sense::click() } else { egui::Sense::hover() }),
@@ -5756,27 +5828,37 @@ impl ZaloGuiApp {
                         let mut avas = HashMap::new();
                         let mut names = HashMap::new();
                         for th in self.threads.iter().filter(|th| !th.is_group) {
+                            let eff_th_name = self.effective_name(&th.id, &th.name).to_string();
                             if let Some(ref ava) = th.avatar {
                                 if !ava.is_empty() {
                                     avas.insert(th.id.clone(), ava.clone());
                                     avas.insert(th.name.clone(), ava.clone());
+                                    avas.insert(eff_th_name.clone(), ava.clone());
                                 }
                             }
-                            names.insert(th.id.clone(), th.name.clone());
+                            names.insert(th.id.clone(), eff_th_name);
                         }
                         let empty_vec = Vec::new();
                         let members = self.group_members_map.get(&thread_id).unwrap_or_else(|| {
                             self.threads.get(self.selected_thread_index).map(|t| &t.presentation.members).unwrap_or(&empty_vec)
                         });
                         for m in members {
+                            let eff_m_name = self.effective_name(&m.id, &m.name).to_string();
                             if let Some(ref ava) = m.avatar {
                                 if !ava.is_empty() {
                                     avas.insert(m.id.clone(), ava.clone());
                                     avas.insert(m.name.clone(), ava.clone());
+                                    avas.insert(eff_m_name.clone(), ava.clone());
                                 }
                             }
-                            if !m.name.is_empty() {
-                                names.insert(m.id.clone(), m.name.clone());
+                            if !eff_m_name.is_empty() {
+                                names.insert(m.id.clone(), eff_m_name);
+                            }
+                        }
+                        for (alias_uid, alias_val) in &self.contact_aliases {
+                            let trimmed = alias_val.trim();
+                            if !trimmed.is_empty() {
+                                names.insert(alias_uid.clone(), trimmed.to_string());
                             }
                         }
                         (avas, names)
@@ -6013,13 +6095,23 @@ impl ZaloGuiApp {
                                                             .or_else(|| member_avatar_by_key.get(msg.sender.as_str()))
                                                             .map(|s| s.as_str())
                                                     };
-                                                    let display_sender_fallback = if is_group {
+                                                    let display_sender_fallback: &str = if is_group {
                                                         s_id.as_deref()
                                                             .and_then(|id| member_name_by_uid.get(id))
+                                                            .or_else(|| member_name_by_uid.get(msg.sender.as_str()))
                                                             .map(|s| s.as_str())
-                                                            .unwrap_or(&thread_name)
+                                                            .unwrap_or_else(|| {
+                                                                if !msg.sender.is_empty()
+                                                                    && msg.sender != "0"
+                                                                    && !msg.sender.chars().all(|c| c.is_ascii_digit())
+                                                                {
+                                                                    &msg.sender
+                                                                } else {
+                                                                    &header_effective_name
+                                                                }
+                                                            })
                                                     } else {
-                                                        &thread_name
+                                                        &header_effective_name
                                                     };
                                                     if let Some(action) = render_chat_bubble(
                                                         ui,
@@ -7765,6 +7857,8 @@ impl ZaloGuiApp {
         self.render_reminder_ui(ctx, pal);
         self.render_edit_history_modal(ctx, pal);
         self.render_folder_modal(ctx, pal);
+        self.render_alias_modal(ctx, pal, &mut ui_actions);
+        self.apply_ui_actions(&mut ui_actions, ctx);
         self.render_settings_modal(ctx, pal);
 
         if let Some((del_idx, del_tid, del_name, del_is_group, del_last_id)) =
@@ -9492,6 +9586,11 @@ impl ZaloGuiApp {
             let mut h = std::collections::hash_map::DefaultHasher::new();
             self.threads.len().hash(&mut h);
             self.settings.active_chat_folder.hash(&mut h);
+            self.contact_aliases.len().hash(&mut h);
+            for (k, v) in &self.contact_aliases {
+                k.hash(&mut h);
+                v.hash(&mut h);
+            }
             self.threads.iter().take(64).for_each(|t| {
                 t.id.hash(&mut h);
                 t.preview.hash(&mut h);
@@ -9553,6 +9652,9 @@ impl ZaloGuiApp {
                             && has_messages
                             && (query.is_empty()
                                 || matches_vn_query(&t.name, &query, &query_folded)
+                                || self
+                                    .contact_alias(&t.id)
+                                    .is_some_and(|a| matches_vn_query(a, &query, &query_folded))
                                 || t.id.contains(&query))
                     })
                     .map(|(i, _)| i)
@@ -9979,6 +10081,78 @@ impl ZaloGuiApp {
                             is_video,
                             is_group,
                         });
+                    }
+                }
+                UiAction::OpenAliasModal {
+                    user_id,
+                    original_name,
+                } => {
+                    let uid = user_id.trim().to_string();
+                    if !uid.is_empty() {
+                        self.alias_modal_input = self
+                            .contact_alias(&uid)
+                            .unwrap_or("")
+                            .to_string();
+                        self.alias_modal_target = Some((uid, original_name));
+                        self.alias_modal_focus_pending = true;
+                    }
+                }
+                UiAction::SetContactAlias { user_id, alias } => {
+                    let uid = user_id.trim().to_string();
+                    let trimmed = alias.trim().to_string();
+                    if uid.is_empty() {
+                        continue;
+                    }
+                    if trimmed.is_empty() {
+                        self.contact_aliases.remove(&uid);
+                        self.alias_modal_target = None;
+                        self.thread_list_cache = None;
+                        self.show_toast("Đã xoá tên gợi nhớ");
+                        let db = crate::store::db_path_for_account(&self.user_uin);
+                        if let Ok(mut st) = crate::store::MessageStore::open(&db) {
+                            let _ = st.delete_contact_alias(&uid);
+                        }
+                        if db != "zalo_history.db" {
+                            if let Ok(mut st) = crate::store::MessageStore::open("zalo_history.db")
+                            {
+                                let _ = st.delete_contact_alias(&uid);
+                            }
+                        }
+                    } else {
+                        self.contact_aliases.insert(uid.clone(), trimmed.clone());
+                        self.alias_modal_target = None;
+                        self.thread_list_cache = None;
+                        self.show_toast(format!("Đã lưu tên gợi nhớ: {trimmed}"));
+                        let now_sec = crate::login::unix_now() as i64;
+                        let db = crate::store::db_path_for_account(&self.user_uin);
+                        if let Ok(mut st) = crate::store::MessageStore::open(&db) {
+                            let _ = st.set_contact_alias(&uid, &trimmed, now_sec);
+                        }
+                        if db != "zalo_history.db" {
+                            if let Ok(mut st) = crate::store::MessageStore::open("zalo_history.db")
+                            {
+                                let _ = st.set_contact_alias(&uid, &trimmed, now_sec);
+                            }
+                        }
+                    }
+                }
+                UiAction::ClearContactAlias { user_id } => {
+                    let uid = user_id.trim().to_string();
+                    if !uid.is_empty() {
+                        self.contact_aliases.remove(&uid);
+                        self.alias_modal_target = None;
+                        self.thread_list_cache = None;
+                        self.show_toast("Đã xoá tên gợi nhớ");
+                        let db = crate::store::db_path_for_account(&self.user_uin);
+                        if let Ok(mut st) = crate::store::MessageStore::open(&db) {
+                            let _ = st.delete_contact_alias(&uid);
+                        }
+                        if db != "zalo_history.db" {
+                            if let Ok(mut st) = crate::store::MessageStore::open("zalo_history.db")
+                            {
+                                let _ = st.delete_contact_alias(&uid);
+                            }
+                        }
                     }
                 }
             }

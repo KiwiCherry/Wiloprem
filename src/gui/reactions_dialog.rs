@@ -36,11 +36,20 @@ impl ZaloGuiApp {
                 .chain(thread.presentation.members.iter())
                 .find(|m| m.id == id && !m.name.is_empty());
             if let Some(m) = member {
-                return (m.name.clone(), m.avatar.clone());
+                return (
+                    self.effective_name(id, &m.name).to_string(),
+                    m.avatar.clone(),
+                );
             }
         }
         if let Some(t) = self.threads.iter().find(|t| !t.is_group && t.id == id) {
-            return (t.name.clone(), t.avatar.clone());
+            return (
+                self.effective_name(id, &t.name).to_string(),
+                t.avatar.clone(),
+            );
+        }
+        if let Some(alias) = self.contact_alias(id) {
+            return (alias.to_string(), None);
         }
         ("Người dùng Zalo".to_string(), None)
     }

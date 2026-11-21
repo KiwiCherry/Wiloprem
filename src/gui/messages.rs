@@ -3752,7 +3752,19 @@ pub(super) fn render_chat_bubble(
     let sender_is_name = !msg.sender.is_empty()
         && msg.sender != "0"
         && !msg.sender.chars().all(|c| c.is_ascii_digit());
-    let show_group_sender = !msg.is_outgoing && !prev_same_sender && is_group && sender_is_name;
+    let resolved_group_sender: &str = if is_group && !thread_name.is_empty() {
+        thread_name
+    } else if sender_is_name {
+        &msg.sender
+    } else {
+        thread_name
+    };
+    let show_group_sender = !msg.is_outgoing
+        && !prev_same_sender
+        && is_group
+        && !resolved_group_sender.is_empty()
+        && resolved_group_sender != "0"
+        && !resolved_group_sender.chars().all(|c| c.is_ascii_digit());
 
     // Pre-measure exact content width for both outgoing and incoming bubbles so every bubble,
     // photo, and call card hugs its content tightly without horizontal overflow or inner/outer frame mismatch.
@@ -3943,7 +3955,7 @@ pub(super) fn render_chat_bubble(
         let sender_w = if show_group_sender {
             ui.fonts(|f| {
                 f.layout_no_wrap(
-                    truncate_chars(&msg.sender, 22).into_owned(),
+                    truncate_chars(resolved_group_sender, 22).into_owned(),
                     FontId::proportional(12.0),
                     Color32::WHITE,
                 )
@@ -4163,7 +4175,9 @@ pub(super) fn render_chat_bubble(
         out_resp.inner
     } else {
         ui.horizontal_top(|ui| {
-            let display_sender = if sender_is_name {
+            let display_sender = if is_group {
+                resolved_group_sender
+            } else if sender_is_name {
                 &msg.sender
             } else {
                 thread_name

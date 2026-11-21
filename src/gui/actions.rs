@@ -58,4 +58,18 @@ pub(crate) enum UiAction {
         is_video: bool,
         is_group: bool,
     },
+    /// Open the local Contact Alias (`Tên gợi nhớ`) editor modal for `user_id`.
+    OpenAliasModal {
+        user_id: String,
+        original_name: String,
+    },
+    /// Set or update a local-only contact alias (`Tên gợi nhớ`) in SQLite and in-memory cache.
+    SetContactAlias {
+        user_id: String,
+        alias: String,
+    },
+    /// Clear a local-only contact alias (`Tên gợi nhớ`), reverting to the original Zalo display name.
+    ClearContactAlias {
+        user_id: String,
+    },
 }
